@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CryptoVault Exit Strategy Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              primary: {
+                DEFAULT: 'hsl(241, 78%, 61%)',
+                foreground: 'hsl(240, 100%, 98%)',
+              },
+              background: 'hsl(240, 10%, 3.9%)',
+              foreground: 'hsl(240, 5%, 95%)',
+              muted: {
+                DEFAULT: 'hsl(240, 3.7%, 15.9%)',
+                foreground: 'hsl(240, 5%, 64.9%)',
+              },
+              accent: {
+                DEFAULT: 'hsl(240, 3.7%, 15.9%)',
+                foreground: 'hsl(240, 5%, 95%)',
+              },
+              destructive: {
+                DEFAULT: 'hsl(0, 72%, 51%)',
+                foreground: 'hsl(0, 0%, 100%)',
+              },
+              success: {
+                DEFAULT: 'hsl(142, 71%, 45%)',
+                foreground: 'hsl(142, 100%, 5%)'
+              },
+              warning: {
+                DEFAULT: 'hsl(48, 96%, 50%)',
+                foreground: 'hsl(48, 100%, 5%)'
+              },
+              card: 'hsl(240, 10%, 3.9%)',
+              'card-foreground': 'hsl(240, 5%, 95%)',
+              border: 'hsl(240, 3.7%, 15.9%)',
+            },
+            animation: {
+              'fade-in': 'fadeIn 0.5s ease-in-out',
+              'slide-up': 'slideUp 0.5s ease-out forwards',
+              'pulse-soft': 'pulseSoft 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              'scale-in': 'scaleIn 0.3s ease-out',
+              'shimmer': 'shimmer 2s infinite linear',
+            },
+            keyframes: {
+              fadeIn: {
+                '0%': { opacity: 0 },
+                '100%': { opacity: 1 },
+              },
+              slideUp: {
+                '0%': { transform: 'translateY(20px)', opacity: 0 },
+                '100%': { transform: 'translateY(0)', opacity: 1 },
+              },
+              scaleIn: {
+                '0%': { transform: 'scale(0.95)', opacity: 0 },
+                '100%': { transform: 'scale(1)', opacity: 1 },
+              },
+              pulseSoft: {
+                '0%, 100%': { opacity: 1, transform: 'scale(1)' },
+                '50%': { opacity: 0.8, transform: 'scale(1.02)' },
+              },
+              shimmer: {
+                '0%': { background-position: '-1000px 0' },
+                '100%': { background-position: '1000px 0' },
+              }
+            },
+             boxShadow: {
+              'glow-primary': '0 0 15px 0px hsla(241, 78%, 61%, 0.4)',
+              'glow-success': '0 0 15px 0px hsla(142, 71%, 45%, 0.4)',
+              'glow-warning': '0 0 15px 0px hsla(48, 96%, 50%, 0.4)',
+            }
+          },
+        },
+      };
+    </script>
+    <style>
+      .light {
+        --color-primary: hsl(241, 78%, 61%);
+        --color-background: hsl(0, 0%, 100%);
+        --color-foreground: hsl(240, 10%, 3.9%);
+        --color-muted: hsl(240, 5%, 96.1%);
+        --color-muted-foreground: hsl(240, 4%, 46.1%);
+        --color-accent: hsl(240, 5%, 96.1%);
+        --color-accent-foreground: hsl(240, 10%, 3.9%);
+        --color-destructive: hsl(0, 84%, 60%);
+        --color-success: hsl(142, 76%, 36%);
+        --color-warning: hsl(38, 92%, 50%);
+        --color-card: hsl(0, 0%, 100%);
+        --color-card-foreground: hsl(240, 10%, 3.9%);
+        --color-border: hsl(240, 6%, 90%);
+      }
+      .dark {
+        --color-primary: hsl(241, 78%, 61%);
+        --color-background: hsl(240, 10%, 3.9%);
+        --color-foreground: hsl(0, 0%, 98%);
+        --color-muted: hsl(240, 3.7%, 15.9%);
+        --color-muted-foreground: hsl(240, 5%, 64.9%);
+        --color-accent: hsl(240, 3.7%, 15.9%);
+        --color-accent-foreground: hsl(0, 0%, 98%);
+        --color-destructive: hsl(0, 63%, 31%);
+        --color-success: hsl(142, 71%, 45%);
+        --color-warning: hsl(48, 96%, 50%);
+        --color-card: hsl(240, 10%, 3.9%);
+        --color-card-foreground: hsl(0, 0%, 98%);
+        --color-border: hsl(240, 3.7%, 15.9%);
+      }
+      body {
+         background-color: var(--color-background);
+         color: var(--color-foreground);
+      }
+      /* FIX: Ensure form elements have readable text color in both themes. */
+      input, select, textarea {
+        color: var(--color-foreground);
+        background-color: var(--color-muted);
+      }
+      input::placeholder,
+      textarea::placeholder {
+        color: var(--color-muted-foreground);
+        opacity: 1; /* Override Firefox's default opacity */
+      }
+      .glassmorphism {
+        background: hsla(240, 4%, 16%, 0.75);
+        -webkit-backdrop-filter: blur(12px);
+        backdrop-filter: blur(12px);
+        border: 1px solid var(--color-border);
+      }
+      .light .glassmorphism {
+        background: hsla(240, 5%, 96%, 0.85);
+        border: 1px solid var(--color-border);
+      }
+      .loading-shimmer {
+        animation: shimmer 2s infinite linear;
+        background: linear-gradient(to right, transparent 8%, hsl(240, 3.7%, 20%) 18%, transparent 33%);
+        background-size: 1000px 100%;
+      }
+      .light .loading-shimmer {
+        background: linear-gradient(to right, transparent 8%, hsl(240, 5%, 90%) 18%, transparent 33%);
+      }
+
+      /* Price flash animations */
+      @keyframes flash-green {
+        0% { background-color: hsla(142, 71%, 45%, 0.3); }
+        100% { background-color: transparent; }
+      }
+      @keyframes flash-red {
+        0% { background-color: hsla(0, 72%, 51%, 0.3); }
+        100% { background-color: transparent; }
+      }
+      .flash-green { animation: flash-green 1.5s ease-out; }
+      .flash-red { animation: flash-red 1.5s ease-out; }
+      
+      .light .flash-green { animation: flash-green-light 1.5s ease-out; }
+      .light .flash-red { animation: flash-red-light 1.5s ease-out; }
+
+      @keyframes flash-green-light {
+        0% { background-color: hsla(142, 76%, 36%, 0.2); }
+        100% { background-color: transparent; }
+      }
+      @keyframes flash-red-light {
+        0% { background-color: hsla(0, 84%, 60%, 0.2); }
+        100% { background-color: transparent; }
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.1.1/",
+    "react": "https://aistudiocdn.com/react@^19.1.1",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/",
+    "recharts": "https://aistudiocdn.com/recharts@^3.2.0"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
