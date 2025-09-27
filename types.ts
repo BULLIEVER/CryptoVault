@@ -1,6 +1,7 @@
 import React from 'react';
 
-export type ExitStrategyType = 'targetMC' | 'ladder' | 'conservative' | 'moonOrBust' | 'ai';
+export type ExitStrategyType = 'targetMC' | 'ladder' | 'conservative' | 'moonOrBust' | 'ai' | 'progressive';
+export type Conviction = 'low' | 'medium' | 'high';
 
 export interface Token {
     id: string;
@@ -14,6 +15,7 @@ export interface Token {
     marketCap: number;
     targetMarketCap: number;
     exitStrategy: ExitStrategyType;
+    conviction: Conviction;
     customExitStages?: { percentage: number; multiplier: number }[];
     imageUrl?: string;
     percentChange24h?: number;
@@ -43,6 +45,7 @@ export interface ModalState {
     addToken: boolean;
     tokenDetails: Token | null;
     settings: boolean;
+    rebalanceWorkbench: boolean;
     confirm: {
         title: string;
         description: string;

@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback, ChangeEvent, useMemo, useRef } from 'react';
-import { Token, Settings, StrategyComparison, ApiToken, ExitStrategyType } from '../../types';
-import { formatCurrency, formatTokenPrice, parseShorthandNumber, formatShorthandNumber } from '../../utils/formatters';
-// FIX: Removed unused icon imports (CheckIcon, ScaleIcon, DollarSignIcon, InfoIcon, RocketIcon) to resolve export errors.
-import { XIcon, SearchIcon, AlertTriangleIcon, DownloadIcon, UploadIcon, Trash2Icon, PencilIcon, TrophyIcon, CompareHorizontalIcon, ScissorsIcon, TargetIcon, LightbulbIcon, ArrowLeftIcon } from '../ui/Icons';
-import { compareStrategies, STRATEGY_CONFIG, generateAiStrategy } from '../../utils/portfolioCalculations';
+import { Token, Settings, StrategyComparison, ApiToken, ExitStrategyType, PortfolioValues, Conviction } from '../../types';
+import { formatCurrency, formatTokenPrice, parseShorthandNumber, formatShorthandNumber, formatCompactNumber } from '../../utils/formatters';
+// FIX: Removed unused icon imports (CheckIcon, ScaleIcon, DollarSignIcon, InfoIcon) to resolve export errors.
+import { XIcon, SearchIcon, AlertTriangleIcon, DownloadIcon, UploadIcon, Trash2Icon, PencilIcon, TrophyIcon, CompareHorizontalIcon, ScissorsIcon, TargetIcon, LightbulbIcon, ArrowLeftIcon, ShieldIcon, DollarSignIcon, RocketIcon, TrendingUpIcon } from '../ui/Icons';
+import { compareStrategies, STRATEGY_CONFIG, generateAiStrategy, getRebalanceCandidates, calculatePortfolioValues } from '../../utils/portfolioCalculations';
 import { useDebounce } from '../../hooks/useDebounce';
 
-const Modal: React.FC<{ isOpen: boolean; onClose: () => void; children: React.ReactNode; size?: 'sm'|'md'|'lg'|'xl' }> = ({ isOpen, onClose, children, size = 'md' }) => {
+const Modal: React.FC<{ isOpen: boolean; onClose: () => void; children: React.ReactNode; size?: 'sm'|'md'|'lg'|'xl'|'full' }> = ({ isOpen, onClose, children, size = 'md' }) => {
     const modalRef = useRef<HTMLDivElement>(null);
     const lastActiveElement = useRef<HTMLElement | null>(null);
 
@@ -53,13 +53,14 @@ const Modal: React.FC<{ isOpen: boolean; onClose: () => void; children: React.Re
         md: 'max-w-md',
         lg: 'max-w-2xl',
         xl: 'max-w-4xl',
+        full: 'max-w-full h-full m-0 rounded-none'
     };
 
     return (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center animate-fade-in" onClick={onClose} onKeyDown={handleKeyDown}>
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center animate-fade-in" onClick={onClose} onKeyDown={handleKeyDown} role="dialog" aria-modal="true">
             <div ref={modalRef} className={`bg-[var(--color-card)] rounded-xl w-full ${sizeClasses[size]} shadow-xl max-h-[90vh] overflow-y-auto m-4 animate-scale-in`} onClick={e => e.stopPropagation()}>
                 <div className="p-6 relative">
-                    <button onClick={onClose} className="absolute top-4 right-4 p-2 rounded-full hover:bg-[var(--color-accent)] transition-colors" aria-label="Close modal">
+                    <button onClick={onClose} className="absolute top-4 right-4 p-2 rounded-full hover:bg-[var(--color-accent)] transition-colors z-10" aria-label="Close modal">
                         <XIcon className="w-5 h-5" />
                     </button>
                     {children}
@@ -105,7 +106,7 @@ export const AddTokenModal: React.FC<AddTokenModalProps> = ({ isOpen, onClose, o
     useEffect(() => {
         const isEditing = !!existingToken;
         const initialToken = existingToken || {
-            name: '', symbol: '', amount: 0, price: 0, entryPrice: 0, marketCap: 0, targetMarketCap: 0, exitStrategy: 'targetMC', chain: '', pairAddress: ''
+            name: '', symbol: '', amount: 0, price: 0, entryPrice: 0, marketCap: 0, targetMarketCap: 0, exitStrategy: 'targetMC', conviction: 'medium', chain: '', pairAddress: ''
         };
         setToken(initialToken);
         setMarketCapInput(initialToken.marketCap > 0 ? formatShorthandNumber(initialToken.marketCap) : '');
@@ -137,7 +138,7 @@ export const AddTokenModal: React.FC<AddTokenModalProps> = ({ isOpen, onClose, o
     }, [debouncedSearchTerm, searchTokensFunction]);
     
     const handleAddManually = () => {
-        setToken({ exitStrategy: 'targetMC' });
+        setToken({ exitStrategy: 'targetMC', conviction: 'medium' });
         setStep(2);
     }
 
@@ -188,7 +189,8 @@ export const AddTokenModal: React.FC<AddTokenModalProps> = ({ isOpen, onClose, o
             entryPrice: prev.entryPrice || apiToken.price,
             marketCap: newMarketCap,
             targetMarketCap: newTargetMarketCap,
-            imageUrl: apiToken.imageUrl
+            imageUrl: apiToken.imageUrl,
+            conviction: prev.conviction || 'medium',
         }));
         
         setMarketCapInput(newMarketCap > 0 ? formatShorthandNumber(newMarketCap) : '');
@@ -230,6 +232,7 @@ export const AddTokenModal: React.FC<AddTokenModalProps> = ({ isOpen, onClose, o
             marketCap: token.marketCap || 0,
             targetMarketCap: token.targetMarketCap || 0,
             exitStrategy: token.exitStrategy || 'targetMC',
+            conviction: token.conviction || 'medium',
             customExitStages: token.customExitStages,
             imageUrl: token.imageUrl
         });
@@ -330,6 +333,22 @@ export const AddTokenModal: React.FC<AddTokenModalProps> = ({ isOpen, onClose, o
                                 <input name="marketCap" value={marketCapInput} onChange={handleMarketCapChange} onBlur={handleMarketCapBlur} type="text" placeholder="Market Cap (e.g., 10M)" className="w-full p-2 bg-muted border border-border rounded-md" required/>
                              </div>
                         </div>
+
+                        <div className="p-4 bg-muted/50 rounded-lg">
+                            <h3 className="font-semibold mb-2 text-muted-foreground">Conviction Level</h3>
+                            <div className="flex gap-2">
+                                {(['low', 'medium', 'high'] as Conviction[]).map(level => (
+                                    <button 
+                                        key={level} 
+                                        type="button" 
+                                        onClick={() => setToken(prev => ({ ...prev, conviction: level }))} 
+                                        className={`flex-1 p-2 text-sm rounded-md capitalize transition-colors ${token.conviction === level ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-accent'}`}
+                                    >
+                                        {level}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
                      </div>
                      <div className="flex justify-end gap-3 pt-6">
                         <button type="button" onClick={() => setStep(3)} className="px-6 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90">Next: Set Strategy</button>
@@ -349,6 +368,7 @@ export const AddTokenModal: React.FC<AddTokenModalProps> = ({ isOpen, onClose, o
                             <label htmlFor="exitStrategy" className="block text-sm font-medium text-muted-foreground mb-1">Pre-built Exit Strategy</label>
                             <select name="exitStrategy" id="exitStrategy" value={token.exitStrategy || 'targetMC'} onChange={handleChange} className="w-full p-2 bg-muted border border-border rounded-md focus:ring-2 focus:ring-primary focus:outline-none">
                                 <option value="targetMC">All at Target Market Cap</option>
+                                <option value="progressive">Progressive Realization (50%, 75%, 90%, 100%)</option>
                                 <option value="ladder">Ladder Exit (2x, 4x, 8x, 16x)</option>
                                 <option value="conservative">Conservative Exit (3x, 6x, 10x)</option>
                                 <option value="moonOrBust">Moon or Bust (5x, 10x, hold 50%)</option>
@@ -408,24 +428,50 @@ interface TokenDetailsModalProps {
     isOpen: boolean;
     onClose: () => void;
     token: Token;
+    onSave: (token: Token) => void;
     onEdit: (token: Token) => void;
     isBalanceHidden: boolean;
 }
-export const TokenDetailsModal: React.FC<TokenDetailsModalProps> = ({ isOpen, onClose, token, onEdit, isBalanceHidden }) => {
-    const comparison = useMemo(() => compareStrategies(token), [token]);
+export const TokenDetailsModal: React.FC<TokenDetailsModalProps> = ({ isOpen, onClose, token, onSave, onEdit, isBalanceHidden }) => {
+    const [activeStrategy, setActiveStrategy] = useState<ExitStrategyType>(token.exitStrategy);
+
+    useEffect(() => {
+        if (isOpen) {
+            setActiveStrategy(token.exitStrategy);
+        }
+    }, [isOpen, token.exitStrategy]);
+
+    const tokenForComparison = useMemo(() => ({
+        ...token,
+        exitStrategy: activeStrategy,
+        // Only use custom stages if the 'ai' strategy is actively selected for comparison
+        customExitStages: activeStrategy === 'ai' ? token.customExitStages : undefined,
+    }), [token, activeStrategy]);
+    
+    const comparison = useMemo(() => compareStrategies(tokenForComparison), [tokenForComparison]);
     const { selectedStrategy, allAtOnce, winner } = comparison;
     
-    const showComparisonView = (token.exitStrategy === 'ai' && !!token.customExitStages) || (token.exitStrategy && !!STRATEGY_CONFIG[token.exitStrategy as keyof typeof STRATEGY_CONFIG]);
+    const handleApplyStrategy = () => {
+        const updatedToken: Token = {
+            ...token,
+            exitStrategy: activeStrategy,
+        };
+        onSave(updatedToken);
+        onClose();
+    };
     
+    const showComparisonView = activeStrategy !== 'targetMC';
+
     let selectedStrategyConfig: { name: string, description: string };
-    if (token.exitStrategy === 'ai') {
+    if (activeStrategy === 'ai') {
         selectedStrategyConfig = { name: 'AI-Generated Strategy', description: 'A custom strategy based on your profit and risk inputs.' };
-    } else if (token.exitStrategy && STRATEGY_CONFIG[token.exitStrategy as keyof typeof STRATEGY_CONFIG]) {
-        selectedStrategyConfig = STRATEGY_CONFIG[token.exitStrategy as keyof typeof STRATEGY_CONFIG];
+    } else if (activeStrategy === 'progressive') {
+        selectedStrategyConfig = STRATEGY_CONFIG.progressive;
+    } else if (activeStrategy === 'ladder' || activeStrategy === 'conservative' || activeStrategy === 'moonOrBust') {
+        selectedStrategyConfig = STRATEGY_CONFIG[activeStrategy];
     } else {
         selectedStrategyConfig = { name: 'All at Target', description: 'Hold 100% until your final target.' };
     }
-
 
     const MetricCard: React.FC<{title: string; value: string; subValue?: string; subValueClass?: string; isConfidential?: boolean}> = ({title, value, subValue, subValueClass, isConfidential}) => (
       <div className="p-4 rounded-lg glassmorphism">
@@ -471,7 +517,24 @@ export const TokenDetailsModal: React.FC<TokenDetailsModalProps> = ({ isOpen, on
             </div>
 
             <div className="mb-6 p-4 rounded-lg glassmorphism">
-                 <h3 className="font-semibold mb-4 flex items-center gap-2"><CompareHorizontalIcon/> Exit Strategy Simulation</h3>
+                 <h3 className="font-semibold mb-2 flex items-center gap-2"><CompareHorizontalIcon/> Exit Strategy Simulator</h3>
+                 <div className="flex items-center gap-4 mb-4">
+                    <label htmlFor="strategy-selector" className="text-sm font-medium text-muted-foreground flex-shrink-0">Compare Strategy:</label>
+                    <select
+                        id="strategy-selector"
+                        value={activeStrategy}
+                        onChange={(e) => setActiveStrategy(e.target.value as ExitStrategyType)}
+                        className="w-full bg-card/50 border border-border rounded-md px-2 py-1.5 text-sm font-semibold text-foreground focus:ring-2 focus:ring-primary focus:outline-none"
+                    >
+                        <option value="targetMC">All at Target Market Cap</option>
+                        <option value="progressive">Progressive Realization</option>
+                        <option value="ladder">Ladder Exit</option>
+                        <option value="conservative">Conservative Exit</option>
+                        <option value="moonOrBust">Moon or Bust</option>
+                        {(token.customExitStages && token.customExitStages.length > 0) && <option value="ai">AI Generated Strategy</option>}
+                    </select>
+                </div>
+
                  <div className={`grid grid-cols-1 ${!showComparisonView ? '' : 'md:grid-cols-2'} gap-4`}>
                     <StrategyCard
                         title={selectedStrategyConfig.name}
@@ -480,9 +543,9 @@ export const TokenDetailsModal: React.FC<TokenDetailsModalProps> = ({ isOpen, on
                         profit={selectedStrategy.profit}
                         profitPercent={selectedStrategy.profitPercentage}
                         isWinner={winner === 'selectedStrategy' && showComparisonView}
-                        icon={!showComparisonView ? <TargetIcon/> : (token.exitStrategy === 'ai' ? <LightbulbIcon/> : <ScissorsIcon/>)}
+                        icon={!showComparisonView ? <TargetIcon/> : (activeStrategy === 'ai' ? <LightbulbIcon/> : <ScissorsIcon/>)}
                     >
-                        {!showComparisonView ? (
+                        {!selectedStrategy.profitStages || selectedStrategy.profitStages.length === 0 ? (
                              <div className="space-y-1 text-sm text-muted-foreground">
                                 <div className="flex justify-between"><span>Target Price:</span><span>{isBalanceHidden ? '*****' : formatTokenPrice(allAtOnce.targetPrice)}</span></div>
                                 <div className="flex justify-between"><span>Amount to Sell:</span><span>100%</span></div>
@@ -491,11 +554,11 @@ export const TokenDetailsModal: React.FC<TokenDetailsModalProps> = ({ isOpen, on
                              <div className="space-y-1 text-sm text-muted-foreground">
                                 {selectedStrategy.profitStages?.map((stage, i) => (
                                     <div key={i} className="flex justify-between items-center">
-                                        <span>Sell {stage.percentage}% @ {stage.multiplier}x</span>
+                                        <span>Sell {stage.percentage.toFixed(1)}% @ {stage.multiplier.toFixed(1)}x</span>
                                         <span className="font-mono text-xs p-1 bg-muted rounded">{isBalanceHidden ? '*****' : formatTokenPrice(stage.price)}</span>
                                     </div>
                                 ))}
-                                {token.exitStrategy === 'moonOrBust' && (
+                                {activeStrategy === 'moonOrBust' && (
                                     <div className="flex justify-between border-t border-border/50 pt-1 mt-1 font-medium">
                                         <span>Hold remaining:</span>
                                         <span>50%</span>
@@ -508,7 +571,7 @@ export const TokenDetailsModal: React.FC<TokenDetailsModalProps> = ({ isOpen, on
                     {showComparisonView && (
                         <StrategyCard
                             title="vs. All At Target"
-                            description="For comparison, selling 100% at your target market cap."
+                            description="For comparison, this is the result of selling 100% at your final target market cap."
                             totalValue={allAtOnce.totalExitValue}
                             profit={allAtOnce.profit}
                             profitPercent={allAtOnce.profitPercentage}
@@ -524,9 +587,16 @@ export const TokenDetailsModal: React.FC<TokenDetailsModalProps> = ({ isOpen, on
                  </div>
             </div>
 
-            <div className="flex justify-end gap-3">
-                <button onClick={() => onEdit(token)} className="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 flex items-center gap-2">
-                    <PencilIcon className="w-4 h-4" /> Edit
+            <div className="flex flex-col md:flex-row justify-end gap-3">
+                 <button onClick={() => onEdit(token)} className="px-4 py-2 rounded-md bg-muted text-muted-foreground hover:bg-accent flex items-center justify-center gap-2">
+                    <PencilIcon className="w-4 h-4" /> Edit Full Details
+                </button>
+                <button 
+                    onClick={handleApplyStrategy} 
+                    disabled={activeStrategy === token.exitStrategy}
+                    className="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                    Apply Strategy
                 </button>
             </div>
         </Modal>
@@ -625,3 +695,236 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, on
         </div>
     </Modal>
 );
+
+// REBALANCE WORKBENCH MODAL
+type RebalanceGoal = 'accelerate' | 'risk' | 'profit';
+type WorkbenchStep = 'goal_selection' | 'workbench' | 'plan_summary';
+
+interface RebalanceWorkbenchModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    tokens: Token[];
+    portfolioValues: PortfolioValues;
+    isBalanceHidden: boolean;
+}
+
+export const RebalanceWorkbenchModal: React.FC<RebalanceWorkbenchModalProps> = ({ isOpen, onClose, tokens, portfolioValues, isBalanceHidden }) => {
+    const [step, setStep] = useState<WorkbenchStep>('goal_selection');
+    const [goal, setGoal] = useState<RebalanceGoal | null>(null);
+    const [sellSliders, setSellSliders] = useState<Record<string, number>>({});
+
+    const candidates = useMemo(() => getRebalanceCandidates(tokens), [tokens]);
+
+    useEffect(() => {
+        if (isOpen) {
+            setStep('goal_selection');
+            setGoal(null);
+            setSellSliders({});
+        }
+    }, [isOpen]);
+    
+    const handleSelectGoal = (selectedGoal: RebalanceGoal) => {
+        setGoal(selectedGoal);
+        setStep('workbench');
+    };
+
+    const handleSliderChange = (tokenId: string, value: number) => {
+        setSellSliders(prev => ({...prev, [tokenId]: value}));
+    };
+    
+    const { sourceCandidates, buyCandidate, totalToReallocate, simulatedValues, plan } = useMemo(() => {
+        let sourceCandidates: any[] = [];
+        if (goal === 'accelerate') sourceCandidates = candidates.accelerate;
+        else if (goal === 'risk') sourceCandidates = candidates.risk;
+        else if (goal === 'profit') sourceCandidates = candidates.profit;
+
+        const buyCandidate = candidates.buy.length > 0 ? candidates.buy[0] : null;
+
+        const totalToReallocate = sourceCandidates.reduce((acc, token) => {
+            const percentage = sellSliders[token.id] || 0;
+            return acc + (token.value * (percentage / 100));
+        }, 0);
+
+        let simulatedTokens = [...tokens];
+        if (totalToReallocate > 0 && buyCandidate) {
+            simulatedTokens = tokens.map(t => {
+                const sellPercentage = sellSliders[t.id];
+                if (sellPercentage > 0) {
+                    const newAmount = t.amount * (1 - sellPercentage / 100);
+                    return { ...t, amount: newAmount };
+                }
+                if (t.id === buyCandidate.id) {
+                    const amountToAdd = totalToReallocate / t.price;
+                    return { ...t, amount: t.amount + amountToAdd };
+                }
+                return t;
+            });
+        }
+        
+        const simulatedValues = calculatePortfolioValues(simulatedTokens);
+
+        const plan = {
+            sells: sourceCandidates
+                .map(t => ({ token: t, percentage: sellSliders[t.id] || 0 }))
+                .filter(s => s.percentage > 0)
+                .map(s => ({ ...s, amountUSD: s.token.value * (s.percentage / 100) })),
+            buys: buyCandidate ? [{ token: buyCandidate, amountUSD: totalToReallocate }] : [],
+        };
+
+        return { sourceCandidates, buyCandidate, totalToReallocate, simulatedValues, plan };
+    }, [goal, candidates, sellSliders, tokens]);
+
+    const GoalButton: React.FC<{ icon: React.ReactNode; title: string; description: string; onClick: () => void }> = ({ icon, title, description, onClick }) => (
+        <button onClick={onClick} className="p-6 border border-border rounded-lg text-left hover:bg-accent hover:border-primary transition-all flex items-start gap-4">
+            <div className="flex-shrink-0 w-10 h-10 bg-primary/10 text-primary rounded-lg flex items-center justify-center">{icon}</div>
+            <div>
+                <h3 className="font-semibold text-lg">{title}</h3>
+                <p className="text-sm text-muted-foreground">{description}</p>
+            </div>
+        </button>
+    );
+
+    const renderGoalSelection = () => (
+        <>
+            <h2 className="text-2xl font-bold mb-1 text-center">Portfolio Optimizer Workbench</h2>
+            <p className="text-muted-foreground text-center mb-6">What is your primary goal for rebalancing today?</p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <GoalButton icon={<DollarSignIcon className="w-6 h-6"/>} title="Take Profits" description="Secure gains from tokens that are near their target." onClick={() => handleSelectGoal('profit')} />
+                <GoalButton icon={<ShieldIcon className="w-6 h-6"/>} title="Reduce Risk" description="Trim oversized positions to diversify and protect your portfolio." onClick={() => handleSelectGoal('risk')} />
+                <GoalButton icon={<RocketIcon className="w-6 h-6"/>} title="Accelerate Growth" description="Move capital from underperformers to high-potential assets." onClick={() => handleSelectGoal('accelerate')} />
+            </div>
+        </>
+    );
+
+    const renderWorkbench = () => {
+        const goalInfo = {
+            profit: { title: "Take Profits", icon: <DollarSignIcon className="w-5 h-5"/> },
+            risk: { title: "Reduce Risk", icon: <ShieldIcon className="w-5 h-5"/> },
+            accelerate: { title: "Accelerate Growth", icon: <RocketIcon className="w-5 h-5"/> },
+        };
+        const currentGoalInfo = goal ? goalInfo[goal] : {title: '', icon: null};
+
+        return (
+            <div className="flex flex-col h-full">
+                <div className="flex items-center gap-4 mb-4">
+                     <button onClick={() => setStep('goal_selection')} className="p-2 rounded-full hover:bg-accent" aria-label="Go back"><ArrowLeftIcon className="w-5 h-5"/></button>
+                     <h2 className="text-2xl font-bold flex items-center gap-2">{currentGoalInfo.icon} {currentGoalInfo.title}</h2>
+                </div>
+                {sourceCandidates.length === 0 ? (
+                     <div className="text-center flex-grow flex flex-col justify-center items-center">
+                        <p className="text-lg font-semibold">No candidates found for this goal.</p>
+                        <p className="text-muted-foreground">Your portfolio seems well-aligned regarding this objective.</p>
+                    </div>
+                ) : (
+                <>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-grow">
+                    {/* Source Column */}
+                    <div className="space-y-4">
+                        <h3 className="font-semibold text-lg text-destructive">Source Funds (Sell)</h3>
+                        {sourceCandidates.map(token => (
+                            <div key={token.id} className="p-4 border border-border rounded-lg">
+                                <div className="flex justify-between items-center mb-2">
+                                    <div className="flex items-center gap-2">
+                                        <img src={token.imageUrl} className="w-6 h-6 rounded-full" alt={token.name}/>
+                                        <span className="font-semibold">{token.symbol}</span>
+                                    </div>
+                                    <span className="font-bold text-lg">{formatCurrency((token.value * ( (sellSliders[token.id] || 0) / 100)))}</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <input type="range" min="0" max="25" value={sellSliders[token.id] || 0} onChange={(e) => handleSliderChange(token.id, parseInt(e.target.value))} className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary" />
+                                    <span className="font-mono w-12 text-center">{sellSliders[token.id] || 0}%</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    {/* Destination Column */}
+                    <div className="space-y-4">
+                        <h3 className="font-semibold text-lg text-success">Destination (Buy)</h3>
+                        {buyCandidate ? (
+                            <div className="p-4 border border-border rounded-lg bg-success/5">
+                                <div className="flex justify-between items-center">
+                                     <div className="flex items-center gap-2">
+                                        <img src={buyCandidate.imageUrl} className="w-6 h-6 rounded-full" alt={buyCandidate.name}/>
+                                        <span className="font-semibold">{buyCandidate.symbol}</span>
+                                     </div>
+                                     <span className="font-bold text-lg text-success">+{formatCurrency(totalToReallocate)}</span>
+                                </div>
+                                <p className="text-sm text-muted-foreground mt-1">Re-allocating to your highest potential asset ({buyCandidate.potentialMultiplier.toFixed(1)}x).</p>
+                            </div>
+                        ) : <p className="text-muted-foreground">No suitable buy candidate.</p>}
+                    </div>
+                </div>
+
+                {/* Impact Analysis Footer */}
+                <div className="mt-6 p-4 border-t border-border grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                    <div>
+                        <h4 className="text-sm text-muted-foreground">Capital to Re-allocate</h4>
+                        <p className="text-xl font-bold text-primary">{formatCurrency(totalToReallocate)}</p>
+                    </div>
+                     <div>
+                        <h4 className="text-sm text-muted-foreground">Original Potential</h4>
+                        <p className="text-xl font-bold">{portfolioValues.growthMultiplier.toFixed(2)}x</p>
+                    </div>
+                    <div>
+                        <h4 className="text-sm text-muted-foreground">New Potential</h4>
+                        <p className="text-xl font-bold text-success">{simulatedValues.growthMultiplier.toFixed(2)}x</p>
+                    </div>
+                    <div className="flex items-center justify-center">
+                        <button onClick={() => setStep('plan_summary')} disabled={totalToReallocate < 1} className="w-full px-6 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground">View Plan</button>
+                    </div>
+                </div>
+                </>
+                )}
+            </div>
+        );
+    };
+    
+    const renderPlanSummary = () => (
+        <div>
+            <div className="flex items-center gap-4 mb-4">
+                 <button onClick={() => setStep('workbench')} className="p-2 rounded-full hover:bg-accent" aria-label="Go back"><ArrowLeftIcon className="w-5 h-5"/></button>
+                 <h2 className="text-2xl font-bold">Your Rebalancing Plan</h2>
+            </div>
+            <p className="text-muted-foreground mb-6">This is an unactioned plan based on your simulation. You will need to perform these trades manually.</p>
+            <div className="space-y-4">
+                {plan.sells.length > 0 && (
+                    <div>
+                        <h3 className="font-semibold text-lg text-destructive mb-2">1. Sell Orders</h3>
+                        <div className="space-y-2">
+                        {plan.sells.map(({token, percentage, amountUSD}) => (
+                            <div key={token.id} className="p-3 bg-muted/50 rounded-lg flex justify-between items-center">
+                                <span>Sell <strong>{percentage}%</strong> of your <strong>{token.symbol}</strong> holding</span>
+                                <span className="font-semibold">{formatCurrency(amountUSD)}</span>
+                            </div>
+                        ))}
+                        </div>
+                    </div>
+                )}
+                 {plan.buys.length > 0 && (
+                    <div>
+                        <h3 className="font-semibold text-lg text-success mb-2">2. Buy Order</h3>
+                        <div className="space-y-2">
+                        {plan.buys.map(({token, amountUSD}) => (
+                            <div key={token.id} className="p-3 bg-muted/50 rounded-lg flex justify-between items-center">
+                                <span>Buy <strong>{token.symbol}</strong> with re-allocated funds</span>
+                                <span className="font-semibold">{formatCurrency(amountUSD)}</span>
+                            </div>
+                        ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+             <div className="mt-8 text-center">
+                 <button onClick={onClose} className="px-6 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90">Done</button>
+            </div>
+        </div>
+    );
+    
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} size="xl">
+            {step === 'goal_selection' && renderGoalSelection()}
+            {step === 'workbench' && renderWorkbench()}
+            {step === 'plan_summary' && renderPlanSummary()}
+        </Modal>
+    );
+};

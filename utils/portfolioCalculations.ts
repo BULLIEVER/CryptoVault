@@ -11,20 +11,22 @@ export const calculatePortfolioValues = (tokens: Token[]): PortfolioValues => {
         const value = (token.amount || 0) * (token.price || 0);
         total += value;
 
-        let tokenTargetValue = value;
+        // Use the selected strategy to determine the realistic target value for this token
+        const strategyResult = compareStrategies(token).selectedStrategy;
+        const tokenTargetValue = strategyResult.totalExitValue;
+        target += tokenTargetValue;
+        
+        // The "highest potential" should still be based on the raw multiplier,
+        // as it indicates which token has the most room to grow, regardless of strategy.
         const marketCap = token.marketCap || 0;
         const targetMarketCap = token.targetMarketCap || 0;
-
         if (marketCap > 0 && targetMarketCap > 0) {
             const multiplier = targetMarketCap / marketCap;
-            tokenTargetValue = value * multiplier;
-
             if (multiplier > highestMultiplier) {
                 highestMultiplier = multiplier;
                 highestPotentialToken = token;
             }
         }
-        target += tokenTargetValue;
     });
 
     const growthMultiplier = total > 0 ? target / total : 0;
@@ -40,6 +42,11 @@ export const calculatePortfolioValues = (tokens: Token[]): PortfolioValues => {
 };
 
 export const STRATEGY_CONFIG = {
+    progressive: {
+        name: 'Progressive Realization',
+        description: 'Sell progressively as the token nears its target (at 50%, 75%, 90%, and 100% of target MC).',
+        // Stages are calculated dynamically based on the token's specific target
+    },
     ladder: {
         name: 'Ladder Exit',
         description: 'Sell 25% at 2x, 4x, 8x, and 16x profit multipliers.',
@@ -157,15 +164,33 @@ export const compareStrategies = (token: Token): StrategyComparison => {
     }
 
     let selectedStrategy: StrategyResult;
-    const { exitStrategy, customExitStages } = token;
+    const { exitStrategy, customExitStages, price, entryPrice, marketCap, targetMarketCap } = token;
     
-    const isValidPrebuiltStrategy = exitStrategy && exitStrategy !== 'targetMC' && exitStrategy !== 'ai' && STRATEGY_CONFIG.hasOwnProperty(exitStrategy);
-
+    // FIX: Refactored the strategy selection logic to be more explicit and type-safe.
+    // This resolves a TypeScript error where it couldn't guarantee that `STRATEGY_CONFIG[exitStrategy]` had a `stages` property.
     if (exitStrategy === 'ai' && customExitStages) {
         selectedStrategy = calculateTokenStrategy(token, customExitStages);
-    } else if (isValidPrebuiltStrategy) {
-        selectedStrategy = calculateTokenStrategy(token, STRATEGY_CONFIG[exitStrategy as keyof typeof STRATEGY_CONFIG].stages);
+    } else if (exitStrategy === 'progressive') {
+        const progressiveConfig = [
+            { sellPercent: 15, progressPercent: 50 },
+            { sellPercent: 20, progressPercent: 75 },
+            { sellPercent: 25, progressPercent: 90 },
+            { sellPercent: 40, progressPercent: 100 },
+        ];
+        
+        const canCalculate = price > 0 && entryPrice > 0 && marketCap > 0 && targetMarketCap > marketCap;
+        const dynamicStages = canCalculate ? progressiveConfig.map(stage => {
+            const targetPriceAtProgress = price * ((targetMarketCap * (stage.progressPercent / 100)) / marketCap);
+            const multiplier = targetPriceAtProgress / entryPrice;
+            return { percentage: stage.sellPercent, multiplier };
+        }) : [];
+
+        selectedStrategy = calculateTokenStrategy(token, dynamicStages);
+
+    } else if (exitStrategy === 'ladder' || exitStrategy === 'conservative' || exitStrategy === 'moonOrBust') {
+        selectedStrategy = calculateTokenStrategy(token, STRATEGY_CONFIG[exitStrategy].stages);
     } else { 
+        // Default to "All at Target" for 'targetMC' or any other unhandled strategy.
         selectedStrategy = calculateTokenStrategy(token);
     }
     
@@ -324,5 +349,98 @@ export const calculatePortfolioProjection = (tokens: Token[]): PortfolioProjecti
         overallProfitPercentage,
         exitStages: allExitStages,
         profitContribution
+    };
+};
+
+export const getRebalanceCandidates = (tokens: Token[]) => {
+    const totalValue = tokens.reduce((acc, t) => acc + (t.amount || 0) * (t.price || 0), 0);
+
+    if (tokens.length < 2 || totalValue === 0) {
+        return { profit: [], risk: [], accelerate: [], buy: [] };
+    }
+
+    const buyConvictionWeights = { low: 0.7, medium: 1.0, high: 1.5 };
+    const sellConvictionWeights = { low: 1.5, medium: 1.0, high: 0.5 };
+
+    const analyzedTokens = tokens.map(token => {
+        const value = (token.amount || 0) * (token.price || 0);
+        const marketCap = token.marketCap || 0;
+        const targetMarketCap = token.targetMarketCap || 0;
+        const entryPrice = token.entryPrice || 0;
+        const price = token.price || 0;
+        const conviction = token.conviction || 'medium';
+
+        return {
+            ...token,
+            value,
+            conviction,
+            portfolioWeight: value / totalValue,
+            progress: targetMarketCap > 0 ? marketCap / targetMarketCap : 0,
+            pnlRatio: entryPrice > 0 ? (price - entryPrice) / entryPrice : 0,
+            potentialMultiplier: marketCap > 0 && targetMarketCap > marketCap ? targetMarketCap / marketCap : 1,
+        };
+    }).filter(t => t.value > 1);
+
+    if (analyzedTokens.length < 2) {
+        return { profit: [], risk: [], accelerate: [], buy: [] };
+    }
+
+    // Sort all tokens by a score combining potential and conviction to find the best buy candidates
+    const buyCandidates = [...analyzedTokens].sort((a, b) => {
+        const scoreA = a.potentialMultiplier * buyConvictionWeights[a.conviction];
+        const scoreB = b.potentialMultiplier * buyConvictionWeights[b.conviction];
+        return scoreB - scoreA;
+    });
+
+    // Define conviction-based thresholds for taking profit.
+    const profitThresholds = {
+        low: 0.80,    // Suggest selling low conviction tokens earlier
+        medium: 0.90, // Standard threshold
+        high: 0.95,   // Let high conviction tokens run longer
+    };
+
+    // Identify candidates for selling based on different strategic goals
+    const profitCandidates = analyzedTokens
+        .filter(t => t.progress >= profitThresholds[t.conviction]) // Dynamic threshold
+        .sort((a, b) => {
+            // Prioritize the one that has exceeded its threshold by the most
+            const progressExcessA = a.progress - profitThresholds[a.conviction];
+            const progressExcessB = b.progress - profitThresholds[b.conviction];
+            return progressExcessB - progressExcessA;
+        })
+        .slice(0, 3);
+
+    const riskCandidates = analyzedTokens
+        .filter(t => t.portfolioWeight > 0.40) // Over-concentrated tokens
+        .sort((a, b) => b.portfolioWeight - a.portfolioWeight)
+        .slice(0, 3);
+
+    const accelerateCandidates = analyzedTokens
+        .filter(t => t.pnlRatio < 0) // Underperforming tokens
+        .map(t => ({
+            ...t,
+            // Score losers by weighing loss against potential, amplified by conviction.
+            // A higher score is worse (stronger sell candidate).
+            loserScore: ((t.pnlRatio * -1) / t.potentialMultiplier) * sellConvictionWeights[t.conviction]
+        }))
+        .sort((a, b) => b.loserScore - a.loserScore)
+        .slice(0, 3);
+    
+    // Create a set of all tokens suggested for selling
+    const sellIds = new Set([...profitCandidates, ...riskCandidates, ...accelerateCandidates].map(t => t.id));
+    
+    // Prioritize candidates for buying that are not also suggested for selling.
+    const nonSellBuyCandidates = buyCandidates.filter(t => !sellIds.has(t.id));
+
+    // If there's a good candidate that isn't a "sell" candidate, it's our top choice.
+    // Otherwise, fall back to the highest potential token overall, even if it is a "sell" candidate.
+    const finalBuyCandidate = nonSellBuyCandidates.length > 0 ? nonSellBuyCandidates[0] : (buyCandidates[0] || null);
+
+    return {
+        profit: profitCandidates,
+        risk: riskCandidates,
+        accelerate: accelerateCandidates,
+        // The workbench expects an array, so we wrap the single best candidate.
+        buy: finalBuyCandidate ? [finalBuyCandidate] : [],
     };
 };

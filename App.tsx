@@ -6,7 +6,7 @@ import { calculatePortfolioValues, findTopOpportunities } from './utils/portfoli
 import { exportToCSV, exportToJSON } from './utils/export';
 import { Header } from './components/Header';
 import { Dashboard } from './components/Dashboard';
-import { AddTokenModal, TokenDetailsModal, SettingsModal, ConfirmationModal } from './components/modals/Modals';
+import { AddTokenModal, TokenDetailsModal, SettingsModal, ConfirmationModal, RebalanceWorkbenchModal } from './components/modals/Modals';
 import { Toast } from './components/ui/Toast';
 import { useLocalStorage } from './hooks/useLocalStorage';
 
@@ -31,21 +31,29 @@ const App: React.FC = () => {
         addToken: false,
         tokenDetails: null,
         settings: false,
+        rebalanceWorkbench: false,
         confirm: null
     });
 
-    // One-time data migration for legacy chain identifiers, runs only once.
+    // One-time data migration for legacy data, runs only once.
     useEffect(() => {
         const CHAIN_MIGRATION_MAP: { [key: string]: string } = { 'eth': 'ethereum' };
-        const needsMigration = tokens.some(t => Object.keys(CHAIN_MIGRATION_MAP).includes(t.chain));
+        
+        const needsMigration = tokens.some(t => 
+            Object.keys(CHAIN_MIGRATION_MAP).includes(t.chain) || !t.conviction
+        );
         
         if (needsMigration) {
-            console.log("Migrating legacy token chain identifiers...");
+            console.log("Migrating legacy token data (chains and conviction)...");
             const migratedTokens = tokens.map(token => {
-                if (CHAIN_MIGRATION_MAP[token.chain]) {
-                    return { ...token, chain: CHAIN_MIGRATION_MAP[token.chain] };
+                const migratedToken = { ...token };
+                if (CHAIN_MIGRATION_MAP[migratedToken.chain]) {
+                    migratedToken.chain = CHAIN_MIGRATION_MAP[migratedToken.chain];
                 }
-                return token;
+                if (!migratedToken.conviction) {
+                    migratedToken.conviction = 'medium'; // Add default conviction
+                }
+                return migratedToken;
             });
             setTokens(migratedTokens);
         }
@@ -320,6 +328,7 @@ const App: React.FC = () => {
                        onViewToken={(token) => setModalState(prev => ({...prev, tokenDetails: token}))}
                        onEditToken={handleEditToken}
                        onRemoveToken={handleRemoveToken}
+                       onOpenWorkbench={() => setModalState(prev => ({...prev, rebalanceWorkbench: true}))}
                    />
                 </div>
 
@@ -336,6 +345,7 @@ const App: React.FC = () => {
                         isOpen={!!modalState.tokenDetails}
                         onClose={() => setModalState(prev => ({...prev, tokenDetails: null}))}
                         token={modalState.tokenDetails}
+                        onSave={handleSaveToken}
                         onEdit={handleEditToken}
                         isBalanceHidden={isBalanceHidden}
                     />
@@ -349,6 +359,14 @@ const App: React.FC = () => {
                     onExport={handleExport}
                     onImport={handleImport}
                     onClearData={handleClearData}
+                />
+
+                <RebalanceWorkbenchModal
+                    isOpen={modalState.rebalanceWorkbench}
+                    onClose={() => setModalState(prev => ({ ...prev, rebalanceWorkbench: false }))}
+                    tokens={tokens}
+                    portfolioValues={portfolioValues}
+                    isBalanceHidden={isBalanceHidden}
                 />
 
                 {modalState.confirm && (

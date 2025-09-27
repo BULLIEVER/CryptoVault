@@ -2,7 +2,7 @@ import React from 'react';
 import { Token, PortfolioValues, PortfolioHistoryEntry, TopOpportunity } from '../types';
 import { formatCurrency, formatTokenPrice, formatCompactNumber } from '../utils/formatters';
 import { PortfolioCompositionChart } from './charts/PortfolioCompositionChart';
-import { WalletIcon, TargetIcon, TrendingUpIcon, RocketIcon, PlusIcon, SearchIcon, PencilIcon, Trash2Icon, AlertTriangleIcon } from './ui/Icons';
+import { WalletIcon, TargetIcon, TrendingUpIcon, RocketIcon, PlusIcon, SearchIcon, PencilIcon, Trash2Icon, AlertTriangleIcon, CompareHorizontalIcon, ArrowUpCircleIcon, ArrowDownCircleIcon, CheckCircleIcon } from './ui/Icons';
 import { Settings } from '../types';
 
 interface DashboardProps {
@@ -17,6 +17,7 @@ interface DashboardProps {
     onViewToken: (token: Token) => void;
     onEditToken: (token: Token) => void;
     onRemoveToken: (tokenId: string) => void;
+    onOpenWorkbench: () => void;
     topOpportunities: TopOpportunity[];
 }
 
@@ -52,6 +53,13 @@ const TokenListItem: React.FC<{ token: Token; onView: () => void; onEdit: () => 
     const pnlPercent = entryValue > 0 ? (pnl / entryValue) * 100 : 0;
     const pnlClass = pnl > 0 ? 'text-success' : pnl < 0 ? 'text-destructive' : 'text-muted-foreground';
     const progress = (token.marketCap || 0) > 0 && (token.targetMarketCap || 0) > 0 ? Math.min(((token.marketCap || 0) / (token.targetMarketCap || 0)) * 100, 100) : 0;
+    const conviction = token.conviction || 'medium';
+
+    const convictionStyles: { [key: string]: string } = {
+        low: 'bg-destructive/20 text-destructive',
+        medium: 'bg-warning/20 text-warning',
+        high: 'bg-success/20 text-success',
+    };
 
     const [flashClass, setFlashClass] = React.useState('');
     const prevPriceRef = React.useRef(token.price);
@@ -101,7 +109,13 @@ const TokenListItem: React.FC<{ token: Token; onView: () => void; onEdit: () => 
                             </div>
                         )}
                     </div>
-                    <div className="text-xs text-muted-foreground">{token.symbol || 'N/A'} · {isMissingData ? 'N/A' : (isBalanceHidden ? '*****' : formatCompactNumber(value))}</div>
+                    <div className="text-xs text-muted-foreground flex items-center gap-2">
+                        <span>{token.symbol || 'N/A'}</span>
+                        <span className={`px-1.5 py-0.5 text-xs font-semibold rounded-full capitalize ${convictionStyles[conviction]}`}>
+                            {conviction}
+                        </span>
+                        <span>· {isMissingData ? 'N/A' : (isBalanceHidden ? '*****' : formatCompactNumber(value))}</span>
+                    </div>
                 </div>
             </div>
             <div className={`p-1 rounded-md transition-colors text-left md:text-right ${flashClass}`}>
@@ -162,7 +176,7 @@ const TokenListItemSkeleton: React.FC = () => (
 );
 
 const TopOpportunitiesCard: React.FC<{ opportunities: TopOpportunity[]; onEditToken: (token: Token) => void; isBalanceHidden: boolean; }> = ({ opportunities, onEditToken, isBalanceHidden }) => (
-    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-5 shadow-lg animate-fade-in">
+    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-5 shadow-lg animate-fade-in h-full">
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <RocketIcon className="w-5 h-5 text-primary" />
             Top Potential
@@ -189,15 +203,45 @@ const TopOpportunitiesCard: React.FC<{ opportunities: TopOpportunity[]; onEditTo
                 ))}
             </div>
         ) : (
-            <div className="text-center py-4">
+            <div className="text-center py-4 flex flex-col justify-center h-full">
                 <SearchIcon className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
-                <p className="text-sm font-medium text-muted-foreground">No opportunities found. Set market cap targets for your tokens.</p>
+                <p className="text-sm font-medium text-muted-foreground">No opportunities found.</p>
+                <p className="text-xs text-muted-foreground mt-1">Set market cap targets for your tokens.</p>
             </div>
         )}
     </div>
 );
 
-export const Dashboard: React.FC<DashboardProps> = ({ tokens, portfolioValues, history, sortOrder, isUpdating, isBalanceHidden, onSortChange, onAddToken, onViewToken, onEditToken, onRemoveToken, topOpportunities }) => {
+const PortfolioOptimizerCard: React.FC<{ tokens: Token[]; onOptimize: () => void; }> = ({ tokens, onOptimize }) => (
+    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-5 shadow-lg animate-fade-in h-full md:col-span-2 lg:col-span-1 flex flex-col">
+        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <CompareHorizontalIcon className="w-5 h-5 text-primary" />
+            Portfolio Optimizer
+        </h2>
+        {tokens.length > 1 ? (
+             <div className="flex-grow flex flex-col justify-center items-center text-center">
+                <p className="text-sm text-muted-foreground mb-4">
+                    Analyze your portfolio to accelerate growth, reduce risk, or take profits.
+                </p>
+                <button 
+                    onClick={onOptimize}
+                    className="w-full px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-semibold hover:bg-primary/90 transition-colors"
+                >
+                    Open Optimizer Workbench
+                </button>
+            </div>
+        ) : (
+            <div className="text-center py-4 h-full flex flex-col justify-center">
+                <CheckCircleIcon className="w-10 h-10 text-success mx-auto mb-2" />
+                <p className="text-sm font-medium text-muted-foreground">Add more tokens</p>
+                <p className="text-xs text-muted-foreground mt-1">Optimization requires at least two assets.</p>
+            </div>
+        )}
+    </div>
+);
+
+
+export const Dashboard: React.FC<DashboardProps> = ({ tokens, portfolioValues, history, sortOrder, isUpdating, isBalanceHidden, onSortChange, onAddToken, onViewToken, onEditToken, onRemoveToken, topOpportunities, onOpenWorkbench }) => {
     
     const sortedTokens = React.useMemo(() => {
         const sorted = [...tokens];
@@ -243,12 +287,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ tokens, portfolioValues, h
                 )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-5 shadow-lg">
                     <h2 className="text-lg font-semibold mb-4">Composition</h2>
                     <PortfolioCompositionChart tokens={tokens} isBalanceHidden={isBalanceHidden} />
                 </div>
                 <TopOpportunitiesCard opportunities={topOpportunities} onEditToken={onEditToken} isBalanceHidden={isBalanceHidden} />
+                <PortfolioOptimizerCard tokens={tokens} onOptimize={onOpenWorkbench} />
             </div>
 
             <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-lg">
