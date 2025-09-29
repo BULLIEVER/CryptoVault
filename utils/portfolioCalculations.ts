@@ -1,4 +1,4 @@
-import { Token, PortfolioValues, StrategyComparison, StrategyResult, StrategyStage, ExitStrategyType, PortfolioProjection, AggregatedExitStage, TopOpportunity } from '../types';
+import { Token, PortfolioValues, StrategyComparison, StrategyResult, StrategyStage, ExitStrategyType, TopOpportunity } from '../types';
 import { formatCurrency } from './formatters';
 
 export const calculatePortfolioValues = (tokens: Token[]): PortfolioValues => {
@@ -290,66 +290,6 @@ export const findTopOpportunities = (tokens: Token[]): TopOpportunity[] => {
 
     // Sort by the largest multiplier first and take the top 5
     return opportunities.sort((a, b) => b.potentialMultiplier - a.potentialMultiplier).slice(0, 5);
-};
-
-
-export const calculatePortfolioProjection = (tokens: Token[]): PortfolioProjection => {
-    let totalInvestment = 0;
-    let totalPotentialProfit = 0;
-    let totalCashedOutValue = 0;
-    const allExitStages: AggregatedExitStage[] = [];
-    const profitContribution: { name: string; profit: number }[] = [];
-
-    tokens.forEach(token => {
-        const investment = (token.amount || 0) * (token.entryPrice || 0);
-        totalInvestment += investment;
-        
-        const strategy = compareStrategies(token).selectedStrategy;
-        const tokenProfit = strategy.profit;
-        totalPotentialProfit += tokenProfit;
-        totalCashedOutValue += strategy.totalExitValue;
-        
-        profitContribution.push({ name: token.symbol, profit: tokenProfit });
-
-        if (strategy.profitStages && strategy.profitStages.length > 0) {
-            strategy.profitStages.forEach(stage => {
-                allExitStages.push({
-                    multiplier: stage.multiplier,
-                    cashOutValue: stage.value,
-                    tokenSymbol: token.symbol,
-                    tokenName: token.name,
-                    tokenImageUrl: token.imageUrl
-                });
-            });
-        } else {
-            const { allAtOnce } = compareStrategies(token);
-            const targetPrice = allAtOnce.targetPrice;
-            const entryPrice = token.entryPrice || 0;
-            const targetMC_Multiplier = entryPrice > 0 ? targetPrice / entryPrice : 0;
-            
-            allExitStages.push({
-                multiplier: targetMC_Multiplier,
-                cashOutValue: allAtOnce.totalExitValue,
-                tokenSymbol: token.symbol,
-                tokenName: token.name,
-                tokenImageUrl: token.imageUrl
-            });
-        }
-    });
-
-    const overallProfitPercentage = totalInvestment > 0 ? (totalPotentialProfit / totalInvestment) * 100 : 0;
-    
-    allExitStages.sort((a, b) => a.multiplier - b.multiplier);
-    profitContribution.sort((a, b) => b.profit - a.profit);
-    
-    return {
-        totalInvestment,
-        totalPotentialProfit,
-        totalCashedOutValue,
-        overallProfitPercentage,
-        exitStages: allExitStages,
-        profitContribution
-    };
 };
 
 export const getRebalanceCandidates = (tokens: Token[]) => {

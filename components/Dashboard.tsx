@@ -1,9 +1,9 @@
 import React from 'react';
-import { Token, PortfolioValues, PortfolioHistoryEntry, TopOpportunity } from '../types';
+import { Token, PortfolioValues, PortfolioHistoryEntry, TopOpportunity, Settings, Conviction } from '../types';
 import { formatCurrency, formatTokenPrice, formatCompactNumber } from '../utils/formatters';
 import { PortfolioCompositionChart } from './charts/PortfolioCompositionChart';
 import { WalletIcon, TargetIcon, TrendingUpIcon, RocketIcon, PlusIcon, SearchIcon, PencilIcon, Trash2Icon, AlertTriangleIcon, CompareHorizontalIcon, ArrowUpCircleIcon, ArrowDownCircleIcon, CheckCircleIcon } from './ui/Icons';
-import { Settings } from '../types';
+import { compareStrategies } from '../utils/portfolioCalculations';
 
 interface DashboardProps {
     tokens: Token[];
@@ -54,11 +54,14 @@ const TokenListItem: React.FC<{ token: Token; onView: () => void; onEdit: () => 
     const pnlClass = pnl > 0 ? 'text-success' : pnl < 0 ? 'text-destructive' : 'text-muted-foreground';
     const progress = (token.marketCap || 0) > 0 && (token.targetMarketCap || 0) > 0 ? Math.min(((token.marketCap || 0) / (token.targetMarketCap || 0)) * 100, 100) : 0;
     const conviction = token.conviction || 'medium';
+    
+    const { selectedStrategy } = React.useMemo(() => compareStrategies(token), [token]);
+    const stages = selectedStrategy.profitStages;
 
-    const convictionStyles: { [key: string]: string } = {
-        low: 'bg-destructive/20 text-destructive',
-        medium: 'bg-warning/20 text-warning',
-        high: 'bg-success/20 text-success',
+    const convictionBadgeStyles: { [key in Conviction]: string } = {
+        low: 'bg-destructive text-destructive-foreground',
+        medium: 'bg-warning text-warning-foreground',
+        high: 'bg-success text-success-foreground',
     };
 
     const [flashClass, setFlashClass] = React.useState('');
@@ -74,7 +77,7 @@ const TokenListItem: React.FC<{ token: Token; onView: () => void; onEdit: () => 
             } else {
                 setFlashClass('flash-red');
             }
-            const timer = setTimeout(() => setFlashClass(''), 1500); // Must match animation duration
+            const timer = setTimeout(() => setFlashClass(''), 1500);
             return () => clearTimeout(timer);
         }
     }, [token.price]);
@@ -91,89 +94,133 @@ const TokenListItem: React.FC<{ token: Token; onView: () => void; onEdit: () => 
         }
     };
 
+    // UI/UX Overhaul based on expert review
     return (
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-4 items-center p-4 hover:bg-[var(--color-accent)] transition-colors cursor-pointer" onClick={handleItemClick}>
-            <div className="flex items-center gap-3 md:col-span-2">
+        <div className={`flex items-center p-4 gap-6 hover:bg-[var(--color-accent)] transition-colors cursor-pointer ${flashClass}`} onClick={handleItemClick}>
+            
+            {/* Token Info (Column 1) */}
+            <div className="flex items-center gap-4 w-2/5 md:w-1/3 flex-shrink-0">
                 <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center bg-primary/10">
                     {token.imageUrl ? <img src={token.imageUrl} alt={token.name || 'Token'} className="w-full h-full object-cover" /> : <span className="font-bold text-primary">{(token.symbol || '??').substring(0, 2)}</span>}
                 </div>
-                <div className="truncate">
-                    <div className="font-semibold truncate flex items-center gap-2">
+                <div className="truncate flex-grow">
+                    <div className="font-semibold text-base truncate flex items-center gap-2">
                         {token.name || 'Unnamed Token'}
                         {isMissingData && (
                             <div className="group relative">
                                 <AlertTriangleIcon className="w-4 h-4 text-warning" />
-                                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-xs p-2 text-xs bg-muted text-muted-foreground rounded-md shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-xs p-2 text-xs bg-muted text-card-foreground rounded-md shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
                                     Missing market data. Click to edit and link this token.
                                 </span>
                             </div>
                         )}
                     </div>
-                    <div className="text-xs text-muted-foreground flex items-center gap-2">
+                    <div className="text-sm text-muted-foreground flex items-center gap-2">
                         <span>{token.symbol || 'N/A'}</span>
-                        <span className={`px-1.5 py-0.5 text-xs font-semibold rounded-full capitalize ${convictionStyles[conviction]}`}>
+                        <span className={`px-2 py-0.5 rounded text-xs font-semibold capitalize ${convictionBadgeStyles[conviction]}`}>
                             {conviction}
                         </span>
-                        <span>· {isMissingData ? 'N/A' : (isBalanceHidden ? '*****' : formatCompactNumber(value))}</span>
                     </div>
                 </div>
             </div>
-            <div className={`p-1 rounded-md transition-colors text-left md:text-right ${flashClass}`}>
-                <div className="font-semibold">{isMissingData ? 'N/A' : formatTokenPrice(token.price || 0)}</div>
-                <div className={`text-xs flex items-center justify-start md:justify-end ${isBalanceHidden ? 'text-muted-foreground' : pnlClass}`}>
-                    {!isMissingData && (
-                        isBalanceHidden ? '*****' :
-                        <>
-                            {pnl >= 0 ? <TrendingUpIcon className="w-3 h-3 mr-1" /> : <TrendingUpIcon className="w-3 h-3 mr-1 transform rotate-180" />}
-                            {pnlPercent.toFixed(2)}%
-                        </>
-                    )}
+
+            {/* Financials (Column 2) */}
+            <div className="hidden md:flex items-center gap-6 text-sm flex-grow w-2/5 md:w-1/3">
+                <div className="w-28 text-right">
+                    <p className="font-semibold">{isBalanceHidden ? '*****' : formatCurrency(value)}</p>
+                    <p className="text-xs text-muted-foreground">Value</p>
+                </div>
+                <div className="w-28 text-right">
+                    {/* FIX: Corrected typo from `isBalancehidden` to `isBalanceHidden`. */}
+                     <p className={`font-semibold ${isBalanceHidden ? '' : pnlClass}`}>{isBalanceHidden ? '*****' : `${pnlPercent.toFixed(1)}%`}</p>
+                    <p className="text-xs text-muted-foreground">P/L</p>
+                </div>
+                 <div className="w-28 text-right">
+                    <p className="font-semibold">{formatTokenPrice(token.price || 0)}</p>
+                    <p className="text-xs text-muted-foreground">Price</p>
                 </div>
             </div>
-            <div className="hidden md:block text-right">
-                <div className="font-semibold">{isBalanceHidden ? '*****' : (token.amount || 0).toLocaleString()}</div>
-                <div className="text-xs text-muted-foreground">Amount</div>
-            </div>
-            <div className="hidden md:block">
-                 <div className="w-full bg-muted rounded-full h-1.5">
-                    <div className="bg-primary h-1.5 rounded-full" style={{ width: `${isMissingData ? 0 : progress}%` }}></div>
+
+            {/* Progress to Target (Column 3) */}
+            <div className="flex flex-col flex-1">
+                 <div className="relative w-full">
+                    {/* Track */}
+                    <div className="h-2.5 w-full rounded-full bg-muted overflow-hidden">
+                        {/* Progress */}
+                        <div 
+                            className="h-full bg-success rounded-full transition-all duration-500" 
+                            style={{ width: `${isMissingData ? 0 : progress}%` }}
+                        ></div>
+                    </div>
+                    {/* Markers */}
+                    {stages && stages.map((stage, index) => {
+                        const currentMC = token.marketCap || 0;
+                        const targetMC = token.targetMarketCap || 0;
+                        const currentPrice = token.price || 0;
+                        
+                        if (currentMC <= 0 || targetMC <= 0 || currentPrice <= 0) return null;
+
+                        const stageMC = currentMC * (stage.price / currentPrice);
+                        if (stageMC < currentMC || stageMC > targetMC) return null;
+                        
+                        const positionPercent = (stageMC / targetMC) * 100;
+                        
+                        if (positionPercent < 1 || positionPercent > 99) return null;
+
+                        return (
+                            <div 
+                                key={index}
+                                className="absolute top-1/2 -translate-y-1/2 group/marker z-10"
+                                style={{ left: `${positionPercent}%` }}
+                            >
+                                <div className="w-3.5 h-3.5 bg-card border-2 border-primary rounded-full -translate-x-1/2 cursor-pointer shadow-lg"></div>
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-xs p-2 text-xs bg-muted text-card-foreground rounded-md shadow-lg opacity-0 group-hover/marker:opacity-100 transition-opacity whitespace-nowrap z-20 pointer-events-none">
+                                    Sell {stage.percentage.toFixed(0)}% @ {formatTokenPrice(stage.price)} ({stage.multiplier.toFixed(1)}x)
+                                </div>
+                            </div>
+                        );
+                    })}
                 </div>
-                <div className="text-xs text-muted-foreground text-right mt-1">{isMissingData ? 'N/A' : `${progress.toFixed(0)}% to Target`}</div>
+                <div className="flex justify-between text-xs text-muted-foreground mt-1.5">
+                    <span>Progress</span>
+                    <span>{isBalanceHidden ? '*****' : (isMissingData ? 'N/A' : `${progress.toFixed(1)}%`)}</span>
+                </div>
             </div>
-            <div className="flex justify-end items-center space-x-1">
-                 <button onClick={(e) => { e.stopPropagation(); onEdit(); }} className="p-2 rounded-full hover:bg-[var(--color-muted)] transition-colors" aria-label="Edit Token"><PencilIcon className="w-4 h-4" /></button>
-                 <button onClick={(e) => { e.stopPropagation(); onRemove(); }} className="p-2 rounded-full hover:bg-[var(--color-muted)] transition-colors" aria-label="Remove Token"><Trash2Icon className="w-4 h-4 text-destructive/80" /></button>
+
+            {/* Actions (Column 4) */}
+            <div className="flex justify-end items-center space-x-0 w-20">
+                 <button onClick={(e) => { e.stopPropagation(); onEdit(); }} className="p-3 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" aria-label="Edit Token"><PencilIcon className="w-4 h-4" /></button>
+                 <button onClick={(e) => { e.stopPropagation(); onRemove(); }} className="p-3 rounded-full text-muted-foreground hover:bg-muted hover:text-destructive transition-colors" aria-label="Remove Token"><Trash2Icon className="w-4 h-4" /></button>
             </div>
         </div>
     );
 };
 
+
 const TokenListItemSkeleton: React.FC = () => (
-    <div className="grid grid-cols-2 md:grid-cols-6 gap-4 items-center p-4">
-        <div className="flex items-center gap-3 md:col-span-2">
+    <div className="flex items-center p-4 gap-4">
+        <div className="flex items-center gap-4 w-1/3 flex-grow">
             <div className="w-10 h-10 rounded-full flex-shrink-0 bg-muted loading-shimmer"></div>
             <div className="truncate w-full">
                 <div className="h-5 w-3/4 bg-muted rounded loading-shimmer"></div>
-                <div className="h-3 w-1/2 bg-muted rounded mt-1 loading-shimmer"></div>
+                <div className="h-4 w-1/4 bg-muted rounded mt-2 loading-shimmer"></div>
             </div>
         </div>
-        <div className="text-left md:text-right">
-            <div className="h-5 w-full bg-muted rounded loading-shimmer"></div>
-            <div className="h-3 w-1/2 bg-muted rounded mt-1 ml-auto loading-shimmer"></div>
+        <div className="hidden md:flex items-center gap-6 text-sm">
+            <div className="w-28"><div className="h-5 w-3/4 bg-muted rounded ml-auto loading-shimmer"></div><div className="h-3 w-1/2 bg-muted rounded mt-1 ml-auto loading-shimmer"></div></div>
+            <div className="w-28"><div className="h-5 w-3/4 bg-muted rounded ml-auto loading-shimmer"></div><div className="h-3 w-1/2 bg-muted rounded mt-1 ml-auto loading-shimmer"></div></div>
+            <div className="w-28"><div className="h-5 w-3/4 bg-muted rounded ml-auto loading-shimmer"></div><div className="h-3 w-1/2 bg-muted rounded mt-1 ml-auto loading-shimmer"></div></div>
         </div>
-        <div className="hidden md:block text-right">
-            <div className="h-5 w-full bg-muted rounded loading-shimmer"></div>
-            <div className="h-3 w-1/2 bg-muted rounded mt-1 ml-auto loading-shimmer"></div>
+        <div className="hidden md:block w-1/4">
+            <div className="h-3 w-full bg-muted rounded-full loading-shimmer"></div>
         </div>
-        <div className="hidden md:block">
-            <div className="h-1.5 w-full bg-muted rounded-full loading-shimmer"></div>
-        </div>
-        <div className="flex justify-end items-center space-x-1">
-            <div className="w-8 h-8 rounded-full bg-muted loading-shimmer"></div>
-            <div className="w-8 h-8 rounded-full bg-muted loading-shimmer"></div>
+        <div className="hidden md:flex justify-end items-center space-x-2 w-20">
+            <div className="w-9 h-9 rounded-full bg-muted loading-shimmer"></div>
+            <div className="w-9 h-9 rounded-full bg-muted loading-shimmer"></div>
         </div>
     </div>
 );
+
 
 const TopOpportunitiesCard: React.FC<{ opportunities: TopOpportunity[]; onEditToken: (token: Token) => void; isBalanceHidden: boolean; }> = ({ opportunities, onEditToken, isBalanceHidden }) => (
     <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-5 shadow-lg animate-fade-in h-full">
@@ -317,8 +364,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ tokens, portfolioValues, h
                     </div>
                 </div>
                 <div className="divide-y divide-[var(--color-border)]">
-                    {isUpdating && tokens.length > 0 ? (
-                       sortedTokens.map(token => <TokenListItemSkeleton key={token.id} />)
+                    {isUpdating && tokens.length > 0 && !sortedTokens.length ? (
+                       [...Array(tokens.length)].map((_, i) => <TokenListItemSkeleton key={i} />)
                     ) : tokens.length > 0 ? (
                         sortedTokens.map(token => (
                             <TokenListItem 

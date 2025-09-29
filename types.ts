@@ -99,21 +99,16 @@ export interface StrategyComparison {
     differencePercentage: number;
 }
 
-export interface AggregatedExitStage {
-    multiplier: number;
+// FIX: Add missing PortfolioProjection and ProjectedExit types for the projection chart.
+export interface ProjectedExit {
+    projectedPortfolioValue: number;
     cashOutValue: number;
     tokenSymbol: string;
-    tokenName: string;
     tokenImageUrl?: string;
 }
 
 export interface PortfolioProjection {
-    totalInvestment: number;
-    totalPotentialProfit: number;
-    totalCashedOutValue: number;
-    overallProfitPercentage: number;
-    exitStages: AggregatedExitStage[];
-    profitContribution: { name: string; profit: number }[];
+    projectedExits: ProjectedExit[];
 }
 
 export interface TopOpportunity extends Token {
