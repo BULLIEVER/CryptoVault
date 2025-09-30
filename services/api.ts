@@ -1,11 +1,31 @@
 import { Token, ApiToken } from '../types';
 import { getChainInfo } from '../utils/chains';
 
+// Lightweight reliability wrapper for fetch with timeout and retries
+async function fetchWithRetry(url: string, options: RequestInit = {}, retries = 2, timeoutMs = 10000): Promise<Response> {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const res = await fetch(url, { ...options, signal: controller.signal });
+        if (!res.ok && retries > 0 && res.status >= 500) {
+            return fetchWithRetry(url, options, retries - 1, timeoutMs);
+        }
+        return res;
+    } catch (err) {
+        if (retries > 0) {
+            return fetchWithRetry(url, options, retries - 1, timeoutMs);
+        }
+        throw err;
+    } finally {
+        clearTimeout(id);
+    }
+}
+
 export async function searchTokens(query: string): Promise<ApiToken[]> {
     if (query.trim().length < 2) {
         return [];
     }
-    const response = await fetch(`https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(query)}`);
+    const response = await fetchWithRetry(`https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(query)}`);
     if (!response.ok) {
         throw new Error('Failed to fetch from DexScreener API');
     }
@@ -49,7 +69,7 @@ export async function batchFetchMarketData(tokens: Token[]): Promise<Map<string,
             const batch = pairAddresses.slice(i, i + 30);
             const url = `https://api.dexscreener.com/latest/dex/pairs/${chain}/${batch.join(',')}`;
             try {
-                const response = await fetch(url);
+                const response = await fetchWithRetry(url);
                 if (!response.ok) {
                     const errorText = await response.text();
                     console.error(`Batch update failed for ${chain} with status ${response.status}.`, errorText);

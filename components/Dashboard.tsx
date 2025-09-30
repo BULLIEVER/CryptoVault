@@ -7,6 +7,7 @@ import { PortfolioCompositionChart } from './charts/PortfolioCompositionChart';
 import { WalletIcon, TargetIcon, TrendingUpIcon, RocketIcon, PlusIcon, SearchIcon, PencilIcon, Trash2Icon, AlertTriangleIcon, CompareHorizontalIcon, ArrowUpCircleIcon, ArrowDownCircleIcon, CheckCircleIcon, BarChartIcon } from './ui/Icons';
 import { compareStrategies } from '../utils/portfolioCalculations';
 import { PortfolioProjectionChart } from './charts/PortfolioProjectionChart';
+import { PortfolioHistoryChart } from './charts/PortfolioHistoryChart';
 
 interface DashboardProps {
     tokens: Token[];
@@ -95,6 +96,8 @@ const TokenListItem: React.FC<{ token: Token; onView: () => void; onEdit: () => 
         }
     };
 
+    // Display percentage in success green to clearly indicate advancement
+
     return (
         <div className={`flex items-center p-4 gap-4 hover:bg-[var(--color-accent)] transition-colors cursor-pointer ${flashClass}`} onClick={handleItemClick}>
             
@@ -146,47 +149,50 @@ const TokenListItem: React.FC<{ token: Token; onView: () => void; onEdit: () => 
 
             {/* Progress to Target (Column 3) */}
             <div className="flex flex-col flex-1">
-                 <div className="relative w-full">
+                {/* Label and percentage grouped with the bar */}
+                <div className="flex justify-between items-center text-xs mb-1">
+                    <span className="uppercase tracking-wide text-[var(--color-muted-foreground)]">Progress</span>
+                    <span className={!isMissingData ? 'font-semibold text-success' : 'text-[var(--color-muted-foreground)]'}>
+                        {isBalanceHidden ? '*****' : (isMissingData ? 'N/A' : `${progress.toFixed(1)}%`)}
+                    </span>
+                </div>
+                <div className="relative w-full">
                     {/* Track */}
-                    <div className="h-2.5 w-full rounded-full bg-muted overflow-hidden">
+                    <div className="relative h-3 w-full rounded-full bg-[var(--color-muted)] border border-[var(--color-border)] overflow-hidden">
                         {/* Progress */}
-                        <div 
-                            className="h-full bg-success rounded-full transition-all duration-500" 
-                            style={{ width: `${isMissingData ? 0 : progress}%` }}
+                        <div
+                            className="absolute top-0 left-0 h-full rounded-full transition-all duration-500 bg-success"
+                            style={{ width: `${Math.max(progress, progress > 0 ? 2 : 0)}%`, backgroundColor: 'var(--color-success)', opacity: 1, mixBlendMode: 'normal', zIndex: 1 }}
+                            aria-label="Progress filled"
                         ></div>
                     </div>
-                    {/* Markers */}
+                    {/* Sell level markers placed on the bar */}
                     {stages && stages.map((stage, index) => {
                         const currentMC = token.marketCap || 0;
                         const targetMC = token.targetMarketCap || 0;
                         const currentPrice = token.price || 0;
-                        
+
                         if (currentMC <= 0 || targetMC <= 0 || currentPrice <= 0) return null;
 
                         const stageMC = currentMC * (stage.price / currentPrice);
                         if (stageMC < currentMC || stageMC > targetMC) return null;
-                        
+
                         const positionPercent = (stageMC / targetMC) * 100;
-                        
                         if (positionPercent < 1 || positionPercent > 99) return null;
 
                         return (
-                            <div 
+                            <div
                                 key={index}
                                 className="absolute top-1/2 -translate-y-1/2 group/marker z-10"
                                 style={{ left: `${positionPercent}%` }}
                             >
-                                <div className="w-3.5 h-3.5 bg-card border-2 border-primary rounded-full -translate-x-1/2 cursor-pointer shadow-lg"></div>
+                                <div className="w-3 h-3 -translate-x-1/2 rounded-full border-2 border-success bg-[var(--color-card)] shadow-glow-success"></div>
                                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-xs p-2 text-xs bg-muted text-card-foreground rounded-md shadow-lg opacity-0 group-hover/marker:opacity-100 transition-opacity whitespace-nowrap z-20 pointer-events-none">
                                     Sell {stage.percentage.toFixed(0)}% @ {formatTokenPrice(stage.price)} ({stage.multiplier.toFixed(1)}x)
                                 </div>
                             </div>
                         );
                     })}
-                </div>
-                <div className="flex justify-between text-xs text-muted-foreground mt-1.5">
-                    <span>Progress</span>
-                    <span>{isBalanceHidden ? '*****' : (isMissingData ? 'N/A' : `${progress.toFixed(1)}%`)}</span>
                 </div>
             </div>
 
@@ -338,7 +344,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tokens, portfolioValues, h
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-5 shadow-lg">
+                <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-5 shadow-lg overflow-hidden">
                     <h2 className="text-lg font-semibold mb-4">Composition</h2>
                     <PortfolioCompositionChart tokens={tokens} isBalanceHidden={isBalanceHidden} />
                 </div>
@@ -395,6 +401,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ tokens, portfolioValues, h
                         </div>
                     )}
                 </div>
+            </div>
+
+            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-lg p-5">
+                <h2 className="text-lg font-semibold mb-4">Portfolio History</h2>
+                <PortfolioHistoryChart history={history} />
             </div>
 
              <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-lg p-5">

@@ -42,6 +42,10 @@ export const Header: React.FC<HeaderProps> = ({ portfolioValue, theme, isUpdatin
                     </div>
 
                     <div className="flex items-center space-x-2">
+                        {/* Online/offline indicator */}
+                        {typeof navigator !== 'undefined' && !navigator.onLine && (
+                            <span className="px-2 py-1 rounded-full text-xs bg-warning text-warning-foreground">Offline</span>
+                        )}
                         <div className="text-right hidden sm:block">
                             <p className="text-sm text-[var(--color-muted-foreground)]">Portfolio Value</p>
                             <p className="text-lg font-semibold text-[var(--color-foreground)]">{isBalanceHidden ? '*****' : formatCurrency(portfolioValue)}</p>

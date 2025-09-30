@@ -41,34 +41,40 @@ export const PortfolioCompositionChart: React.FC<PortfolioCompositionChartProps>
     }
 
     return (
-         <div style={{ width: '100%', height: 250 }}>
-            <ResponsiveContainer>
-                <PieChart>
-                    <Pie
-                        data={data}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        outerRadius={80}
-                        innerRadius={60}
-                        fill="#8884d8"
-                        dataKey="value"
-                        paddingAngle={5}
-                    >
-                        {data.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                    </Pie>
-                    <Tooltip formatter={(value: number) => [isBalanceHidden ? '*****' : formatCurrency(value), "Value"]} />
-                </PieChart>
-            </ResponsiveContainer>
-            <div className="flex flex-wrap justify-center gap-x-4 gap-y-2">
-                {data.map((entry, index) => (
-                    <div key={`legend-${index}`} className="flex items-center text-sm">
-                        <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
-                        <span>{entry.name}</span>
-                    </div>
-                ))}
+         <div className="flex flex-col" style={{ width: '100%', height: 260 }}>
+            <div className="flex-1 min-h-0">
+                <ResponsiveContainer>
+                    <PieChart>
+                        <Pie
+                            data={data}
+                            cx="50%"
+                            cy="50%"
+                            labelLine={false}
+                            outerRadius={58}
+                            innerRadius={40}
+                            fill="#8884d8"
+                            dataKey="value"
+                            paddingAngle={3}
+                            stroke="var(--color-card)"
+                            strokeWidth={2}
+                        >
+                            {data.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                            ))}
+                        </Pie>
+                        <Tooltip formatter={(value: number) => [isBalanceHidden ? '*****' : formatCurrency(value), "Value"]} />
+                    </PieChart>
+                </ResponsiveContainer>
+            </div>
+            <div className="mt-2 max-h-20 overflow-auto px-1">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 place-items-start">
+                    {data.map((entry, index) => (
+                        <div key={`legend-${index}`} className="flex items-center text-sm min-w-0" title={entry.name}>
+                            <div className="w-3 h-3 rounded-full mr-2 flex-shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
+                            <span className="truncate">{entry.name}</span>
+                        </div>
+                    ))}
+                </div>
             </div>
         </div>
     );

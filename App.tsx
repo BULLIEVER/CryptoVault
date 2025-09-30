@@ -335,6 +335,16 @@ const App: React.FC = () => {
                    />
                 </div>
 
+                {/* Global loading overlay during updates */}
+                {isUpdating && (
+                    <div className="fixed inset-0 z-[90] pointer-events-none">
+                        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full glassmorphism shadow-glow-primary flex items-center gap-2">
+                            <div className="h-3 w-3 rounded-full bg-primary animate-pulse"></div>
+                            <span className="text-sm">Refreshing prices…</span>
+                        </div>
+                    </div>
+                )}
+
                 <AddTokenModal
                     isOpen={modalState.addToken}
                     onClose={() => setModalState(prev => ({ ...prev, addToken: false, tokenDetails: null }))}
