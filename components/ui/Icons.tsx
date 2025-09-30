@@ -248,3 +248,21 @@ export const DollarSignIcon: React.FC<IconProps> = (props) => (
     <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
   </svg>
 );
+
+export const BarChartIcon: React.FC<IconProps> = (props) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <line x1="12" x2="12" y1="20" y2="10" />
+    <line x1="18" x2="18" y1="20" y2="4" />
+    <line x1="6" x2="6" y1="20" y2="16" />
+  </svg>
+);
+
+export const WandSparklesIcon: React.FC<IconProps> = (props) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <path d="m5 3 2.5 5L10 3" />
+    <path d="m19 15 2.5 5L24 15" />
+    <path d="M22 2 12 12" />
+    <path d="m3 21 8-8" />
+    <path d="m14 6 3.5 7L24 6" />
+  </svg>
+);

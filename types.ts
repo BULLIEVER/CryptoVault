@@ -38,7 +38,7 @@ export interface ApiToken {
 export interface Settings {
     updateInterval: number;
     notificationsEnabled: boolean;
-    sortTokensBy: 'value' | 'name' | 'progress' | 'profit';
+    sortTokensBy: 'value' | 'name' | 'progress';
 }
 
 export interface ModalState {
@@ -113,4 +113,10 @@ export interface PortfolioProjection {
 
 export interface TopOpportunity extends Token {
     potentialMultiplier: number;
+}
+
+export interface AiRebalancePlan {
+    sells: { symbol: string; percentage: number; rationale?: string }[];
+    buy: { symbol: string; rationale?: string } | null;
+    rationale: string;
 }

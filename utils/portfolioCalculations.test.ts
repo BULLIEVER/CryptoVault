@@ -19,7 +19,8 @@ const expect = (value: any) => ({
 });
 
 
-import { getRebalanceCandidates, calculateTokenStrategy, compareStrategies, STRATEGY_CONFIG } from './portfolioCalculations';
+// FIX: Removed getRebalanceCandidates as it's no longer exported.
+import { calculateTokenStrategy, compareStrategies, STRATEGY_CONFIG } from './portfolioCalculations';
 import { Token } from '../types';
 
 // Mock base token data to avoid repetition
@@ -75,7 +76,7 @@ describe('calculateTokenStrategy', () => {
 
     it('should cap exit prices at the target price if multipliers exceed it', () => {
         const lowTargetToken = { ...baseToken, targetMarketCap: 6_000_000 }; // 3x potential from current MC, so targetPrice = $6
-        // Stages: 25% @ 2x, 4x, 8x, 16x. Entry Price: $1. Exit prices: $2, $4, $8(capped at $6), $16(capped at $6).
+        // Stages: 25% @ 2x, 4x, 8x(capped at $6), $16(capped at $6). Entry Price: $1. Exit prices: $2, $4, $6, $6.
         const result = calculateTokenStrategy(lowTargetToken, STRATEGY_CONFIG.ladder.stages);
         const expectedExitValue = (25 * 2) + (25 * 4) + (25 * 6) + (25 * 6); // 50 + 100 + 150 + 150 = 450
 
@@ -134,147 +135,4 @@ describe('calculateTokenStrategy', () => {
 
 });
 
-describe('getRebalanceCandidates', () => {
-
-    it('should return empty arrays for an empty token list', () => {
-        const candidates = getRebalanceCandidates([]);
-        expect(candidates.profit).toHaveLength(0);
-        expect(candidates.risk).toHaveLength(0);
-        expect(candidates.accelerate).toHaveLength(0);
-        expect(candidates.buy).toHaveLength(0);
-    });
-    
-    it('should return empty arrays if there is only one token', () => {
-        const tokens: Token[] = [createMockToken({ symbol: 'SOLO' })];
-        const candidates = getRebalanceCandidates(tokens);
-        expect(candidates.profit).toHaveLength(0);
-        expect(candidates.risk).toHaveLength(0);
-        expect(candidates.accelerate).toHaveLength(0);
-        expect(candidates.buy).toHaveLength(0);
-    });
-
-    it('should return empty sell candidate lists for a well-balanced portfolio', () => {
-        const tokens: Token[] = [
-            createMockToken({ symbol: 'TOKEN_A', amount: 1, price: 4000, marketCap: 4e9, targetMarketCap: 10e9, entryPrice: 3000 }), // 40% weight, progress 0.4, pnl > 0
-            createMockToken({ symbol: 'TOKEN_B', amount: 1, price: 4000, marketCap: 4e9, targetMarketCap: 10e9, entryPrice: 3000 }), // 40% weight, progress 0.4, pnl > 0
-            createMockToken({ symbol: 'TOKEN_C', amount: 1, price: 2000, marketCap: 2e9, targetMarketCap: 10e9, entryPrice: 1000 }), // 20% weight, progress 0.2, pnl > 0
-        ];
-        const candidates = getRebalanceCandidates(tokens);
-        expect(candidates.profit).toHaveLength(0);
-        expect(candidates.risk).toHaveLength(0);
-        expect(candidates.accelerate).toHaveLength(0);
-    });
-
-    it('should suggest selling a low conviction token for profit at 80% progress', () => {
-        const tokens: Token[] = [
-            createMockToken({ symbol: 'LOW_CONVICTION_PROFIT', marketCap: 8e7, targetMarketCap: 10e7, conviction: 'low' }), // 80% progress
-            createMockToken({ symbol: 'GROW', marketCap: 1e6, targetMarketCap: 50e6, conviction: 'high' }),
-        ];
-        const candidates = getRebalanceCandidates(tokens);
-        expect(candidates.profit).toHaveLength(1);
-        expect(candidates.profit[0].symbol).toBe('LOW_CONVICTION_PROFIT');
-    });
-
-    it('should NOT suggest selling a high conviction token at 91% progress', () => {
-        const tokens: Token[] = [
-            createMockToken({ symbol: 'HIGH_CONVICTION_HOLD', marketCap: 9.1e7, targetMarketCap: 10e7, conviction: 'high' }), // 91% progress, below 95% threshold
-            createMockToken({ symbol: 'GROW', marketCap: 1e6, targetMarketCap: 50e6, conviction: 'high' }),
-        ];
-        const candidates = getRebalanceCandidates(tokens);
-        expect(candidates.profit).toHaveLength(0);
-    });
-    
-    it('should suggest selling a high conviction token for profit at 95% progress', () => {
-        const tokens: Token[] = [
-            createMockToken({ symbol: 'HIGH_CONVICTION_SELL', marketCap: 9.5e7, targetMarketCap: 10e7, conviction: 'high' }), // 95% progress
-            createMockToken({ symbol: 'GROW', marketCap: 1e6, targetMarketCap: 50e6, conviction: 'medium' }),
-        ];
-        const candidates = getRebalanceCandidates(tokens);
-        expect(candidates.profit).toHaveLength(1);
-        expect(candidates.profit[0].symbol).toBe('HIGH_CONVICTION_SELL');
-    });
-
-    it('should prioritize selling a low conviction token at 85% over a medium conviction at 92%', () => {
-        const tokens: Token[] = [
-            // low_conv is 5% over its threshold (85% - 80%)
-            createMockToken({ symbol: 'LOW_CONV', marketCap: 8.5e7, targetMarketCap: 10e7, conviction: 'low' }), 
-            // med_conv is 2% over its threshold (92% - 90%)
-            createMockToken({ symbol: 'MED_CONV', marketCap: 9.2e7, targetMarketCap: 10e7, conviction: 'medium' }), 
-            createMockToken({ symbol: 'GROW', marketCap: 1e6, targetMarketCap: 50e6, conviction: 'high' }),
-        ];
-        const candidates = getRebalanceCandidates(tokens);
-        expect(candidates.profit).toHaveLength(2);
-        // The first candidate (highest priority) should be the one most over its threshold.
-        expect(candidates.profit[0].symbol).toBe('LOW_CONV');
-        expect(candidates.profit[1].symbol).toBe('MED_CONV');
-    });
-
-    it('should identify an over-concentrated token as a risk candidate', () => {
-        const tokens: Token[] = [
-            createMockToken({ symbol: 'HEAVY', amount: 1, price: 100000, marketCap: 1e9, targetMarketCap: 2e9 }), // >90% weight
-            createMockToken({ symbol: 'DIVERSIFY', amount: 1, price: 1000, marketCap: 1e6, targetMarketCap: 100e6 }), // 100x potential
-        ];
-        const candidates = getRebalanceCandidates(tokens);
-        expect(candidates.risk).toHaveLength(1);
-        expect(candidates.risk[0].symbol).toBe('HEAVY');
-        expect(candidates.buy).toHaveLength(1);
-        expect(candidates.buy[0].symbol).toBe('DIVERSIFY');
-    });
-
-    it('should identify a significantly underperforming token as an accelerate candidate', () => {
-        const tokens: Token[] = [
-            createMockToken({ symbol: 'LOSER', amount: 100, price: 5, entryPrice: 10, marketCap: 5_000_000, targetMarketCap: 10_000_000 }), // -50% PnL
-            createMockToken({ symbol: 'WINNER', amount: 50, price: 10, marketCap: 20_000_000, targetMarketCap: 100_000_000 }), // 5x potential
-        ];
-        const candidates = getRebalanceCandidates(tokens);
-        expect(candidates.accelerate).toHaveLength(1);
-        expect(candidates.accelerate[0].symbol).toBe('LOSER');
-        expect(candidates.buy).toHaveLength(1);
-        expect(candidates.buy[0].symbol).toBe('WINNER');
-    });
-    
-    it('should identify candidates across multiple categories simultaneously', () => {
-        const tokens: Token[] = [
-            createMockToken({ symbol: 'PROFIT', amount: 1, price: 9500, marketCap: 95e6, targetMarketCap: 100e6, conviction: 'medium' }), // Profit candidate (95% > 90%)
-            createMockToken({ symbol: 'HEAVY', amount: 1, price: 20000, marketCap: 1e9, targetMarketCap: 2e9 }),  // Risk candidate (high weight)
-            createMockToken({ symbol: 'LOSER', amount: 1, price: 500, entryPrice: 1000, marketCap: 5e6, targetMarketCap: 10e6 }), // Accelerate candidate
-            createMockToken({ symbol: 'BUYME', amount: 1, price: 100, marketCap: 1e6, targetMarketCap: 50e6 }), // Buy candidate
-        ];
-
-        const candidates = getRebalanceCandidates(tokens);
-        expect(candidates.profit).toHaveLength(1);
-        expect(candidates.profit[0].symbol).toBe('PROFIT');
-        expect(candidates.risk).toHaveLength(1);
-        expect(candidates.risk[0].symbol).toBe('HEAVY');
-        expect(candidates.accelerate).toHaveLength(1);
-        expect(candidates.accelerate[0].symbol).toBe('LOSER');
-        expect(candidates.buy).toHaveLength(1);
-        expect(candidates.buy[0].symbol).toBe('BUYME');
-    });
-
-    it('should not list a sell candidate as a buy candidate if other options are available', () => {
-        const tokens: Token[] = [
-            createMockToken({ symbol: 'PROFIT_HIGH_POTENTIAL', amount: 1, price: 9500, marketCap: 95e6, targetMarketCap: 200e6, conviction: 'medium' }), // Profit candidate, but also 2.1x potential
-            createMockToken({ symbol: 'BUYME', amount: 1, price: 100, marketCap: 1e6, targetMarketCap: 50e6 }), // Buy candidate, 50x potential
-        ];
-        const candidates = getRebalanceCandidates(tokens);
-        expect(candidates.profit).toHaveLength(1);
-        expect(candidates.profit[0].symbol).toBe('PROFIT_HIGH_POTENTIAL');
-        expect(candidates.buy).toHaveLength(1);
-        expect(candidates.buy[0].symbol).toBe('BUYME'); // Should not be PROFIT_HIGH_POTENTIAL
-    });
-
-    it('should list a sell candidate as a buy candidate if it has highest potential and no other options exist', () => {
-        const tokens: Token[] = [
-            createMockToken({ symbol: 'PROFIT_HIGH_POTENTIAL', amount: 1, price: 9500, marketCap: 95e6, targetMarketCap: 200e6, conviction: 'medium' }), // Profit candidate, 2.1x potential
-            createMockToken({ symbol: 'RISK_LOW_POTENTIAL', amount: 1, price: 20000, marketCap: 1e9, targetMarketCap: 1.1e9 }), // Risk candidate, 1.1x potential
-        ];
-        const candidates = getRebalanceCandidates(tokens);
-        expect(candidates.profit).toHaveLength(1);
-        expect(candidates.profit[0].symbol).toBe('PROFIT_HIGH_POTENTIAL');
-        expect(candidates.risk).toHaveLength(1);
-        expect(candidates.risk[0].symbol).toBe('RISK_LOW_POTENTIAL');
-        expect(candidates.buy).toHaveLength(1);
-        expect(candidates.buy[0].symbol).toBe('PROFIT_HIGH_POTENTIAL'); // Is the buy candidate because no *other* candidates exist
-    });
-});
+// FIX: Removed obsolete test suite for getRebalanceCandidates.

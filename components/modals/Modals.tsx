@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, ChangeEvent, useMemo, useRef } from 'react';
-import { Token, Settings, StrategyComparison, ApiToken, ExitStrategyType, PortfolioValues, Conviction } from '../../types';
+import { Token, Settings, StrategyComparison, ApiToken, ExitStrategyType, PortfolioValues, Conviction, AiRebalancePlan } from '../../types';
 import { formatCurrency, formatTokenPrice, parseShorthandNumber, formatShorthandNumber, formatCompactNumber } from '../../utils/formatters';
 // FIX: Removed unused icon imports (CheckIcon, ScaleIcon, DollarSignIcon, InfoIcon) to resolve export errors.
-import { XIcon, SearchIcon, AlertTriangleIcon, DownloadIcon, UploadIcon, Trash2Icon, PencilIcon, TrophyIcon, CompareHorizontalIcon, ScissorsIcon, TargetIcon, LightbulbIcon, ArrowLeftIcon, ShieldIcon, DollarSignIcon, RocketIcon, TrendingUpIcon } from '../ui/Icons';
-import { compareStrategies, STRATEGY_CONFIG, generateAiStrategy, getRebalanceCandidates, calculatePortfolioValues } from '../../utils/portfolioCalculations';
+import { XIcon, SearchIcon, AlertTriangleIcon, DownloadIcon, UploadIcon, Trash2Icon, PencilIcon, TrophyIcon, CompareHorizontalIcon, ScissorsIcon, TargetIcon, LightbulbIcon, ArrowLeftIcon, ShieldIcon, DollarSignIcon, RocketIcon, TrendingUpIcon, WandSparklesIcon } from '../ui/Icons';
+import { compareStrategies, STRATEGY_CONFIG, generateAiStrategy, getAiRebalancePlan, calculatePortfolioValues } from '../../utils/portfolioCalculations';
 import { useDebounce } from '../../hooks/useDebounce';
 
 const Modal: React.FC<{ isOpen: boolean; onClose: () => void; children: React.ReactNode; size?: 'sm'|'md'|'lg'|'xl'|'full' }> = ({ isOpen, onClose, children, size = 'md' }) => {
@@ -85,14 +85,16 @@ interface AddTokenModalProps {
     onSave: (token: Token) => void;
     existingToken: Token | null;
     searchTokensFunction: (query: string) => Promise<ApiToken[]>;
+    addToast: (title: string, description: string, variant: 'success' | 'error' | 'warning' | 'info') => void;
 }
 
-export const AddTokenModal: React.FC<AddTokenModalProps> = ({ isOpen, onClose, onSave, existingToken, searchTokensFunction }) => {
+export const AddTokenModal: React.FC<AddTokenModalProps> = ({ isOpen, onClose, onSave, existingToken, searchTokensFunction, addToast }) => {
     const [step, setStep] = useState(1);
     const [token, setToken] = useState<Partial<Token>>({});
     const [searchTerm, setSearchTerm] = useState('');
     const [searchResults, setSearchResults] = useState<ApiToken[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [isGenerating, setIsGenerating] = useState(false);
     const [marketCapInput, setMarketCapInput] = useState('');
     const [targetMarketCapInput, setTargetMarketCapInput] = useState('');
     const debouncedSearchTerm = useDebounce(searchTerm, 300);
@@ -201,10 +203,23 @@ export const AddTokenModal: React.FC<AddTokenModalProps> = ({ isOpen, onClose, o
         setStep(2);
     };
 
-    const handleGenerateStrategy = () => {
-        const desiredProfit = parseShorthandNumber(desiredProfitInput);
-        const result = generateAiStrategy(token, desiredProfit, riskTolerance);
-        setGeneratedStrategy(result);
+    const handleGenerateStrategy = async () => {
+        setIsGenerating(true);
+        setGeneratedStrategy(null);
+        try {
+            const desiredProfit = parseShorthandNumber(desiredProfitInput);
+            if (desiredProfit <= 0) {
+                 addToast('Invalid Input', 'Please enter a desired profit amount.', 'warning');
+                 return;
+            }
+            const result = await generateAiStrategy(token, desiredProfit, riskTolerance);
+            setGeneratedStrategy(result);
+        } catch (error) {
+            console.error(error);
+            addToast('AI Error', error instanceof Error ? error.message : 'Could not generate strategy.', 'error');
+        } finally {
+            setIsGenerating(false);
+        }
     };
 
     const handleApplyStrategy = () => {
@@ -214,6 +229,7 @@ export const AddTokenModal: React.FC<AddTokenModalProps> = ({ isOpen, onClose, o
                 exitStrategy: 'ai',
                 customExitStages: generatedStrategy.stages,
             }));
+            addToast('Strategy Applied', 'The AI-generated strategy has been set.', 'success');
         }
     };
 
@@ -236,6 +252,12 @@ export const AddTokenModal: React.FC<AddTokenModalProps> = ({ isOpen, onClose, o
             customExitStages: token.customExitStages,
             imageUrl: token.imageUrl
         });
+    };
+
+    const convictionStyles: { [key in Conviction]: { base: string; text: string; } } = {
+        low: { base: 'bg-destructive text-destructive-foreground', text: 'text-destructive-foreground' },
+        medium: { base: 'bg-warning text-warning-foreground', text: 'text-warning-foreground' },
+        high: { base: 'bg-success text-success-foreground', text: 'text-success-foreground' },
     };
 
     const renderStepIndicator = () => (
@@ -336,17 +358,20 @@ export const AddTokenModal: React.FC<AddTokenModalProps> = ({ isOpen, onClose, o
 
                         <div className="p-4 bg-muted/50 rounded-lg">
                             <h3 className="font-semibold mb-2 text-muted-foreground">Conviction Level</h3>
-                            <div className="flex gap-2">
-                                {(['low', 'medium', 'high'] as Conviction[]).map(level => (
-                                    <button 
-                                        key={level} 
-                                        type="button" 
-                                        onClick={() => setToken(prev => ({ ...prev, conviction: level }))} 
-                                        className={`flex-1 p-2 text-sm rounded-md capitalize transition-colors ${token.conviction === level ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-accent'}`}
-                                    >
-                                        {level}
-                                    </button>
-                                ))}
+                            <div className="flex rounded-md overflow-hidden border border-border">
+                                {(['low', 'medium', 'high'] as Conviction[]).map((level, i) => {
+                                    const isSelected = token.conviction === level;
+                                    return (
+                                        <button 
+                                            key={level} 
+                                            type="button" 
+                                            onClick={() => setToken(prev => ({ ...prev, conviction: level }))} 
+                                            className={`flex-1 p-2 text-sm rounded-none capitalize transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[var(--color-card)] focus:z-10 ${i > 0 ? 'border-l border-border' : ''} ${isSelected ? `${convictionStyles[level].base} font-semibold shadow-inner` : 'bg-muted/50 hover:bg-accent'}`}
+                                        >
+                                            {level}
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </div>
                      </div>
@@ -395,7 +420,9 @@ export const AddTokenModal: React.FC<AddTokenModalProps> = ({ isOpen, onClose, o
                                             ))}
                                         </div>
                                      </div>
-                                     <button type="button" onClick={handleGenerateStrategy} className="w-full px-4 py-2 rounded-md border border-border hover:bg-accent font-semibold">Generate Plan</button>
+                                     <button type="button" onClick={handleGenerateStrategy} disabled={isGenerating} className="w-full px-4 py-2 rounded-md border border-border hover:bg-accent font-semibold flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50">
+                                        {isGenerating ? <><Spinner/>Generating...</> : 'Generate Plan'}
+                                     </button>
                                      {generatedStrategy && (
                                         <div className="mt-4 p-3 bg-muted rounded-lg space-y-2">
                                             {generatedStrategy.warning && <p className="text-xs text-warning flex items-center gap-2"><AlertTriangleIcon className="w-4 h-4" />{generatedStrategy.warning}</p>}
@@ -403,7 +430,7 @@ export const AddTokenModal: React.FC<AddTokenModalProps> = ({ isOpen, onClose, o
                                                 <>
                                                     <h4 className="font-semibold text-sm">Suggested Strategy:</h4>
                                                     <ul className="text-sm space-y-1">
-                                                    {generatedStrategy.stages.map((s, i) => <li key={i}>- Sell {s.percentage}% at ~{s.multiplier.toFixed(1)}x profit</li>)}
+                                                    {generatedStrategy.stages.map((s, i) => <li key={i}>- Sell {s.percentage.toFixed(1)}% at ~{s.multiplier.toFixed(1)}x profit</li>)}
                                                     </ul>
                                                     <button type="button" onClick={handleApplyStrategy} className="w-full mt-2 px-4 py-2 text-sm rounded-md bg-success text-success-foreground hover:bg-success/90">Apply This Strategy</button>
                                                 </>
@@ -551,19 +578,25 @@ export const TokenDetailsModal: React.FC<TokenDetailsModalProps> = ({ isOpen, on
                                 <div className="flex justify-between"><span>Amount to Sell:</span><span>100%</span></div>
                             </div>
                         ) : (
-                             <div className="space-y-1 text-sm text-muted-foreground">
+                             <div className="text-sm text-muted-foreground -mx-2">
+                                <div className="flex justify-between px-2 py-1 font-semibold text-xs uppercase">
+                                    <span>Action</span>
+                                    <span>Price (Multiplier)</span>
+                                </div>
+                                <div className="space-y-1">
                                 {selectedStrategy.profitStages?.map((stage, i) => (
-                                    <div key={i} className="flex justify-between items-center">
-                                        <span>Sell {stage.percentage.toFixed(1)}% @ {stage.multiplier.toFixed(1)}x</span>
-                                        <span className="font-mono text-xs p-1 bg-muted rounded">{isBalanceHidden ? '*****' : formatTokenPrice(stage.price)}</span>
+                                    <div key={i} className="flex justify-between items-center px-2 py-1.5 rounded-md hover:bg-primary/5">
+                                        <span>Sell {stage.percentage.toFixed(1)}%</span>
+                                        <span className="font-mono text-xs p-1 bg-muted rounded">{isBalanceHidden ? '*****' : `${formatTokenPrice(stage.price)} (${stage.multiplier.toFixed(1)}x)`}</span>
                                     </div>
                                 ))}
                                 {activeStrategy === 'moonOrBust' && (
-                                    <div className="flex justify-between border-t border-border/50 pt-1 mt-1 font-medium">
+                                    <div className="flex justify-between border-t border-border/50 pt-1 mt-1 font-medium px-2">
                                         <span>Hold remaining:</span>
                                         <span>50%</span>
                                     </div>
                                 )}
+                                </div>
                             </div>
                         )}
                     </StrategyCard>
@@ -588,13 +621,13 @@ export const TokenDetailsModal: React.FC<TokenDetailsModalProps> = ({ isOpen, on
             </div>
 
             <div className="flex flex-col md:flex-row justify-end gap-3">
-                 <button onClick={() => onEdit(token)} className="px-4 py-2 rounded-md bg-muted text-muted-foreground hover:bg-accent flex items-center justify-center gap-2">
+                 <button onClick={() => onEdit(token)} className="px-4 py-2 rounded-md border border-border text-muted-foreground hover:bg-accent hover:text-foreground transition-colors flex items-center justify-center gap-2">
                     <PencilIcon className="w-4 h-4" /> Edit Full Details
                 </button>
                 <button 
                     onClick={handleApplyStrategy} 
                     disabled={activeStrategy === token.exitStrategy}
-                    className="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    className="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                 >
                     Apply Strategy
                 </button>
@@ -711,49 +744,74 @@ interface RebalanceWorkbenchModalProps {
 export const RebalanceWorkbenchModal: React.FC<RebalanceWorkbenchModalProps> = ({ isOpen, onClose, tokens, portfolioValues, isBalanceHidden }) => {
     const [step, setStep] = useState<WorkbenchStep>('goal_selection');
     const [goal, setGoal] = useState<RebalanceGoal | null>(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [plan, setPlan] = useState<AiRebalancePlan | null>(null);
     const [sellSliders, setSellSliders] = useState<Record<string, number>>({});
-
-    const candidates = useMemo(() => getRebalanceCandidates(tokens), [tokens]);
 
     useEffect(() => {
         if (isOpen) {
             setStep('goal_selection');
             setGoal(null);
             setSellSliders({});
+            setPlan(null);
+            setIsLoading(false);
+            setError(null);
         }
     }, [isOpen]);
     
-    const handleSelectGoal = (selectedGoal: RebalanceGoal) => {
+    const handleSelectGoal = async (selectedGoal: RebalanceGoal) => {
         setGoal(selectedGoal);
         setStep('workbench');
+        setIsLoading(true);
+        setError(null);
+        try {
+            const aiPlan = await getAiRebalancePlan(tokens, selectedGoal);
+            setPlan(aiPlan);
+            // Pre-fill sliders with AI suggestions
+            const initialSliders = aiPlan.sells.reduce((acc, sell) => {
+                const token = tokens.find(t => t.symbol === sell.symbol);
+                if (token) {
+                    acc[token.id] = sell.percentage;
+                }
+                return acc;
+            }, {} as Record<string, number>);
+            setSellSliders(initialSliders);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "An unknown error occurred.");
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const handleSliderChange = (tokenId: string, value: number) => {
         setSellSliders(prev => ({...prev, [tokenId]: value}));
     };
     
-    const { sourceCandidates, buyCandidate, totalToReallocate, simulatedValues, plan } = useMemo(() => {
-        let sourceCandidates: any[] = [];
-        if (goal === 'accelerate') sourceCandidates = candidates.accelerate;
-        else if (goal === 'risk') sourceCandidates = candidates.risk;
-        else if (goal === 'profit') sourceCandidates = candidates.profit;
+    const { sourceCandidates, buyCandidate, totalToReallocate, simulatedValues, finalPlan } = useMemo(() => {
+        if (!plan) return { sourceCandidates: [], buyCandidate: null, totalToReallocate: 0, simulatedValues: portfolioValues, finalPlan: { sells: [], buys: [] } };
 
-        const buyCandidate = candidates.buy.length > 0 ? candidates.buy[0] : null;
+        const sourceTokens = plan.sells
+            .map(sell => tokens.find(t => t.symbol === sell.symbol))
+            .filter((t): t is Token => !!t)
+            .map(t => ({...t, value: t.amount * t.price}));
 
-        const totalToReallocate = sourceCandidates.reduce((acc, token) => {
+        const buyToken = plan.buy ? tokens.find(t => t.symbol === plan.buy!.symbol) : null;
+
+        const totalToReallocate = sourceTokens.reduce((acc, token) => {
             const percentage = sellSliders[token.id] || 0;
             return acc + (token.value * (percentage / 100));
         }, 0);
 
         let simulatedTokens = [...tokens];
-        if (totalToReallocate > 0 && buyCandidate) {
+        if (totalToReallocate > 0 && buyToken) {
             simulatedTokens = tokens.map(t => {
                 const sellPercentage = sellSliders[t.id];
                 if (sellPercentage > 0) {
                     const newAmount = t.amount * (1 - sellPercentage / 100);
                     return { ...t, amount: newAmount };
                 }
-                if (t.id === buyCandidate.id) {
+                if (t.id === buyToken.id) {
                     const amountToAdd = totalToReallocate / t.price;
                     return { ...t, amount: t.amount + amountToAdd };
                 }
@@ -763,16 +821,16 @@ export const RebalanceWorkbenchModal: React.FC<RebalanceWorkbenchModalProps> = (
         
         const simulatedValues = calculatePortfolioValues(simulatedTokens);
 
-        const plan = {
-            sells: sourceCandidates
+        const finalPlan = {
+            sells: sourceTokens
                 .map(t => ({ token: t, percentage: sellSliders[t.id] || 0 }))
                 .filter(s => s.percentage > 0)
                 .map(s => ({ ...s, amountUSD: s.token.value * (s.percentage / 100) })),
-            buys: buyCandidate ? [{ token: buyCandidate, amountUSD: totalToReallocate }] : [],
+            buys: buyToken ? [{ token: buyToken, amountUSD: totalToReallocate }] : [],
         };
 
-        return { sourceCandidates, buyCandidate, totalToReallocate, simulatedValues, plan };
-    }, [goal, candidates, sellSliders, tokens]);
+        return { sourceCandidates: sourceTokens, buyCandidate: buyToken, totalToReallocate, simulatedValues, finalPlan };
+    }, [plan, sellSliders, tokens, portfolioValues]);
 
     const GoalButton: React.FC<{ icon: React.ReactNode; title: string; description: string; onClick: () => void }> = ({ icon, title, description, onClick }) => (
         <button onClick={onClick} className="p-6 border border-border rounded-lg text-left hover:bg-accent hover:border-primary transition-all flex items-start gap-4">
@@ -786,7 +844,7 @@ export const RebalanceWorkbenchModal: React.FC<RebalanceWorkbenchModalProps> = (
 
     const renderGoalSelection = () => (
         <>
-            <h2 className="text-2xl font-bold mb-1 text-center">Portfolio Optimizer Workbench</h2>
+            <h2 className="text-2xl font-bold mb-1 text-center">AI Portfolio Optimizer</h2>
             <p className="text-muted-foreground text-center mb-6">What is your primary goal for rebalancing today?</p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <GoalButton icon={<DollarSignIcon className="w-6 h-6"/>} title="Take Profits" description="Secure gains from tokens that are near their target." onClick={() => handleSelectGoal('profit')} />
@@ -804,19 +862,44 @@ export const RebalanceWorkbenchModal: React.FC<RebalanceWorkbenchModalProps> = (
         };
         const currentGoalInfo = goal ? goalInfo[goal] : {title: '', icon: null};
 
+        if (isLoading) {
+            return (
+                <div className="flex flex-col items-center justify-center h-96 text-center">
+                    <Spinner />
+                    <h2 className="text-xl font-semibold mt-4">Analyzing Your Portfolio...</h2>
+                    <p className="text-muted-foreground">The AI is crafting a custom rebalancing plan for you.</p>
+                </div>
+            );
+        }
+
+        if (error) {
+            return (
+                <div className="flex flex-col items-center justify-center h-96 text-center">
+                     <AlertTriangleIcon className="w-12 h-12 text-destructive mb-4" />
+                    <h2 className="text-xl font-semibold mt-4">Analysis Failed</h2>
+                    <p className="text-muted-foreground max-w-md">{error}</p>
+                     <button onClick={() => setStep('goal_selection')} className="mt-4 px-4 py-2 rounded-md bg-primary text-primary-foreground">Try a Different Goal</button>
+                </div>
+            );
+        }
+
         return (
             <div className="flex flex-col h-full">
                 <div className="flex items-center gap-4 mb-4">
                      <button onClick={() => setStep('goal_selection')} className="p-2 rounded-full hover:bg-accent" aria-label="Go back"><ArrowLeftIcon className="w-5 h-5"/></button>
                      <h2 className="text-2xl font-bold flex items-center gap-2">{currentGoalInfo.icon} {currentGoalInfo.title}</h2>
                 </div>
-                {sourceCandidates.length === 0 ? (
-                     <div className="text-center flex-grow flex flex-col justify-center items-center">
-                        <p className="text-lg font-semibold">No candidates found for this goal.</p>
-                        <p className="text-muted-foreground">Your portfolio seems well-aligned regarding this objective.</p>
+                {sourceCandidates.length === 0 && !buyCandidate ? (
+                     <div className="text-center flex-grow flex flex-col justify-center items-center h-80">
+                        <p className="text-lg font-semibold">No recommendations for this goal.</p>
+                        <p className="text-muted-foreground max-w-md">{plan?.rationale || "The AI determined your portfolio is well-aligned for this objective."}</p>
                     </div>
                 ) : (
                 <>
+                <div className="p-4 rounded-lg bg-primary/10 border border-primary/20 mb-4">
+                    <h3 className="font-semibold text-primary flex items-center gap-2"><WandSparklesIcon /> AI Rationale</h3>
+                    <p className="text-sm text-primary/80">{plan?.rationale}</p>
+                </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-grow">
                     {/* Source Column */}
                     <div className="space-y-4">
@@ -831,7 +914,7 @@ export const RebalanceWorkbenchModal: React.FC<RebalanceWorkbenchModalProps> = (
                                     <span className="font-bold text-lg">{formatCurrency((token.value * ( (sellSliders[token.id] || 0) / 100)))}</span>
                                 </div>
                                 <div className="flex items-center gap-3">
-                                    <input type="range" min="0" max="25" value={sellSliders[token.id] || 0} onChange={(e) => handleSliderChange(token.id, parseInt(e.target.value))} className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary" />
+                                    <input type="range" min="0" max="100" step="5" value={sellSliders[token.id] || 0} onChange={(e) => handleSliderChange(token.id, parseInt(e.target.value))} className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary" />
                                     <span className="font-mono w-12 text-center">{sellSliders[token.id] || 0}%</span>
                                 </div>
                             </div>
@@ -849,9 +932,9 @@ export const RebalanceWorkbenchModal: React.FC<RebalanceWorkbenchModalProps> = (
                                      </div>
                                      <span className="font-bold text-lg text-success">+{formatCurrency(totalToReallocate)}</span>
                                 </div>
-                                <p className="text-sm text-muted-foreground mt-1">Re-allocating to your highest potential asset ({buyCandidate.potentialMultiplier.toFixed(1)}x).</p>
+                                <p className="text-sm text-muted-foreground mt-1">{plan?.buy?.rationale || `Re-allocating to a high-potential asset.`}</p>
                             </div>
-                        ) : <p className="text-muted-foreground">No suitable buy candidate.</p>}
+                        ) : <p className="text-muted-foreground">No suitable buy candidate found by the AI.</p>}
                     </div>
                 </div>
 
@@ -887,11 +970,11 @@ export const RebalanceWorkbenchModal: React.FC<RebalanceWorkbenchModalProps> = (
             </div>
             <p className="text-muted-foreground mb-6">This is an unactioned plan based on your simulation. You will need to perform these trades manually.</p>
             <div className="space-y-4">
-                {plan.sells.length > 0 && (
+                {finalPlan.sells.length > 0 && (
                     <div>
                         <h3 className="font-semibold text-lg text-destructive mb-2">1. Sell Orders</h3>
                         <div className="space-y-2">
-                        {plan.sells.map(({token, percentage, amountUSD}) => (
+                        {finalPlan.sells.map(({token, percentage, amountUSD}) => (
                             <div key={token.id} className="p-3 bg-muted/50 rounded-lg flex justify-between items-center">
                                 <span>Sell <strong>{percentage}%</strong> of your <strong>{token.symbol}</strong> holding</span>
                                 <span className="font-semibold">{formatCurrency(amountUSD)}</span>
@@ -900,11 +983,11 @@ export const RebalanceWorkbenchModal: React.FC<RebalanceWorkbenchModalProps> = (
                         </div>
                     </div>
                 )}
-                 {plan.buys.length > 0 && (
+                 {finalPlan.buys.length > 0 && (
                     <div>
                         <h3 className="font-semibold text-lg text-success mb-2">2. Buy Order</h3>
                         <div className="space-y-2">
-                        {plan.buys.map(({token, amountUSD}) => (
+                        {finalPlan.buys.map(({token, amountUSD}) => (
                             <div key={token.id} className="p-3 bg-muted/50 rounded-lg flex justify-between items-center">
                                 <span>Buy <strong>{token.symbol}</strong> with re-allocated funds</span>
                                 <span className="font-semibold">{formatCurrency(amountUSD)}</span>

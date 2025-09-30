@@ -66,9 +66,9 @@ export const PortfolioProjectionChart: React.FC<PortfolioProjectionChartProps> =
         };
         const bucketSize = getBucketSize(portfolioTotalValue || 10000);
 
-        // FIX: Use a string key for the accumulator to ensure Object.values returns a correctly typed array,
-        // resolving errors where properties on `stage`, `a`, and `b` were not found.
-        const aggregated = projection.projectedExits.reduce((acc, exit) => {
+        // FIX: Explicitly type the accumulator (`acc`) and cast the initial value in the reduce function to ensure correct type inference for `aggregated`.
+        // This resolves errors where properties on `stage`, `a`, and `b` were not found on type `unknown`.
+        const aggregated = projection.projectedExits.reduce((acc: Record<string, ChartData>, exit) => {
             const bucketFloor = Math.floor(exit.projectedPortfolioValue / bucketSize) * bucketSize;
             const key = String(bucketFloor);
 

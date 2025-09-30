@@ -82,28 +82,28 @@
     <style>
       .light {
         --color-primary: hsl(241, 78%, 61%);
-        --color-background: hsl(0, 0%, 100%);
+        --color-background: hsl(240, 8%, 97%);
         --color-foreground: hsl(240, 10%, 3.9%);
-        --color-muted: hsl(240, 5%, 96.1%);
+        --color-muted: hsl(240, 5%, 94%);
         --color-muted-foreground: hsl(240, 4%, 46.1%);
-        --color-accent: hsl(240, 5%, 96.1%);
+        --color-accent: hsl(240, 5%, 92%);
         --color-accent-foreground: hsl(240, 10%, 3.9%);
-        --color-destructive: hsl(0, 84%, 60%);
-        --color-success: hsl(142, 76%, 36%);
-        --color-warning: hsl(38, 92%, 50%);
+        --color-destructive: hsl(0, 72%, 51%);
+        --color-success: hsl(142, 71%, 45%);
+        --color-warning: hsl(48, 96%, 50%);
         --color-card: hsl(0, 0%, 100%);
         --color-card-foreground: hsl(240, 10%, 3.9%);
-        --color-border: hsl(240, 6%, 90%);
+        --color-border: hsl(240, 6%, 88%);
       }
       .dark {
         --color-primary: hsl(241, 78%, 61%);
         --color-background: hsl(240, 10%, 3.9%);
         --color-foreground: hsl(0, 0%, 98%);
         --color-muted: hsl(240, 3.7%, 15.9%);
-        --color-muted-foreground: hsl(240, 5%, 75%); /* UI/UX Improvement: Increased lightness for better contrast */
+        --color-muted-foreground: hsl(240, 5%, 75%);
         --color-accent: hsl(240, 3.7%, 15.9%);
         --color-accent-foreground: hsl(0, 0%, 98%);
-        --color-destructive: hsl(0, 63%, 31%);
+        --color-destructive: hsl(0, 72%, 51%);
         --color-success: hsl(142, 71%, 45%);
         --color-warning: hsl(48, 96%, 50%);
         --color-card: hsl(240, 10%, 3.9%);
@@ -131,7 +131,7 @@
         border: 1px solid var(--color-border);
       }
       .light .glassmorphism {
-        background: hsla(240, 5%, 96%, 0.85);
+        background: hsla(0, 0%, 100%, 0.7);
         border: 1px solid var(--color-border);
       }
       .loading-shimmer {
@@ -159,11 +159,11 @@
       .light .flash-red { animation: flash-red-light 1.5s ease-out; }
 
       @keyframes flash-green-light {
-        0% { background-color: hsla(142, 76%, 36%, 0.2); }
+        0% { background-color: hsla(142, 71%, 45%, 0.2); }
         100% { background-color: transparent; }
       }
       @keyframes flash-red-light {
-        0% { background-color: hsla(0, 84%, 60%, 0.2); }
+        0% { background-color: hsla(0, 72%, 51%, 0.2); }
         100% { background-color: transparent; }
       }
     </style>
@@ -173,7 +173,8 @@
     "react/": "https://aistudiocdn.com/react@^19.1.1/",
     "react": "https://aistudiocdn.com/react@^19.1.1",
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/",
-    "recharts": "https://aistudiocdn.com/recharts@^3.2.0"
+    "recharts": "https://aistudiocdn.com/recharts@^3.2.0",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.21.0"
   }
 }
 </script>

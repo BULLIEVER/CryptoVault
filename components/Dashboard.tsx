@@ -1,14 +1,17 @@
+
 import React from 'react';
-import { Token, PortfolioValues, PortfolioHistoryEntry, TopOpportunity, Settings, Conviction } from '../types';
+import { Token, PortfolioValues, PortfolioHistoryEntry, TopOpportunity, Settings, Conviction, PortfolioProjection } from '../types';
 import { formatCurrency, formatTokenPrice, formatCompactNumber } from '../utils/formatters';
 import { PortfolioCompositionChart } from './charts/PortfolioCompositionChart';
-import { WalletIcon, TargetIcon, TrendingUpIcon, RocketIcon, PlusIcon, SearchIcon, PencilIcon, Trash2Icon, AlertTriangleIcon, CompareHorizontalIcon, ArrowUpCircleIcon, ArrowDownCircleIcon, CheckCircleIcon } from './ui/Icons';
+import { WalletIcon, TargetIcon, TrendingUpIcon, RocketIcon, PlusIcon, SearchIcon, PencilIcon, Trash2Icon, AlertTriangleIcon, CompareHorizontalIcon, ArrowUpCircleIcon, ArrowDownCircleIcon, CheckCircleIcon, BarChartIcon } from './ui/Icons';
 import { compareStrategies } from '../utils/portfolioCalculations';
+import { PortfolioProjectionChart } from './charts/PortfolioProjectionChart';
 
 interface DashboardProps {
     tokens: Token[];
     portfolioValues: PortfolioValues;
     history: PortfolioHistoryEntry[];
+    portfolioProjection: PortfolioProjection;
     sortOrder: Settings['sortTokensBy'];
     isUpdating: boolean;
     isBalanceHidden: boolean;
@@ -48,10 +51,6 @@ const StatsCardSkeleton: React.FC = () => (
 const TokenListItem: React.FC<{ token: Token; onView: () => void; onEdit: () => void; onRemove: () => void; isBalanceHidden: boolean; }> = ({ token, onView, onEdit, onRemove, isBalanceHidden }) => {
     const isMissingData = !token.chain || !token.pairAddress;
     const value = (token.amount || 0) * (token.price || 0);
-    const entryValue = (token.amount || 0) * (token.entryPrice || 0);
-    const pnl = value - entryValue;
-    const pnlPercent = entryValue > 0 ? (pnl / entryValue) * 100 : 0;
-    const pnlClass = pnl > 0 ? 'text-success' : pnl < 0 ? 'text-destructive' : 'text-muted-foreground';
     const progress = (token.marketCap || 0) > 0 && (token.targetMarketCap || 0) > 0 ? Math.min(((token.marketCap || 0) / (token.targetMarketCap || 0)) * 100, 100) : 0;
     const conviction = token.conviction || 'medium';
     
@@ -131,9 +130,8 @@ const TokenListItem: React.FC<{ token: Token; onView: () => void; onEdit: () => 
                     <p className="text-xs text-muted-foreground">Value</p>
                 </div>
                 <div className="w-28 text-right">
-                    {/* FIX: Corrected typo from `isBalancehidden` to `isBalanceHidden`. */}
-                     <p className={`font-semibold ${isBalanceHidden ? '' : pnlClass}`}>{isBalanceHidden ? '*****' : `${pnlPercent.toFixed(1)}%`}</p>
-                    <p className="text-xs text-muted-foreground">P/L</p>
+                     <p className="font-semibold">{isBalanceHidden ? '*****' : formatTokenPrice(token.entryPrice || 0)}</p>
+                    <p className="text-xs text-muted-foreground">Avg. Entry</p>
                 </div>
                  <div className="w-28 text-right">
                     <p className="font-semibold">{formatTokenPrice(token.price || 0)}</p>
@@ -268,13 +266,13 @@ const PortfolioOptimizerCard: React.FC<{ tokens: Token[]; onOptimize: () => void
         {tokens.length > 1 ? (
              <div className="flex-grow flex flex-col justify-center items-center text-center">
                 <p className="text-sm text-muted-foreground mb-4">
-                    Analyze your portfolio to accelerate growth, reduce risk, or take profits.
+                    Use AI to analyze your portfolio and generate a rebalancing plan to accelerate growth, reduce risk, or take profits.
                 </p>
                 <button 
                     onClick={onOptimize}
                     className="w-full px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-semibold hover:bg-primary/90 transition-colors"
                 >
-                    Open Optimizer Workbench
+                    Open AI Optimizer
                 </button>
             </div>
         ) : (
@@ -288,7 +286,7 @@ const PortfolioOptimizerCard: React.FC<{ tokens: Token[]; onOptimize: () => void
 );
 
 
-export const Dashboard: React.FC<DashboardProps> = ({ tokens, portfolioValues, history, sortOrder, isUpdating, isBalanceHidden, onSortChange, onAddToken, onViewToken, onEditToken, onRemoveToken, topOpportunities, onOpenWorkbench }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ tokens, portfolioValues, history, portfolioProjection, sortOrder, isUpdating, isBalanceHidden, onSortChange, onAddToken, onViewToken, onEditToken, onRemoveToken, topOpportunities, onOpenWorkbench }) => {
     
     const sortedTokens = React.useMemo(() => {
         const sorted = [...tokens];
@@ -299,11 +297,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ tokens, portfolioValues, h
                     const progressA = ((a.marketCap || 0) > 0 && (a.targetMarketCap || 0) > 0) ? (a.marketCap || 0) / (a.targetMarketCap || 0) : 0;
                     const progressB = ((b.marketCap || 0) > 0 && (b.targetMarketCap || 0) > 0) ? (b.marketCap || 0) / (b.targetMarketCap || 0) : 0;
                     return progressB - progressA;
-                });
-                case 'profit': return sorted.sort((a,b) => {
-                    const profitA = ((a.price || 0) - (a.entryPrice || 0)) * (a.amount || 0);
-                    const profitB = ((b.price || 0) - (b.entryPrice || 0)) * (a.amount || 0);
-                    return profitB - profitA;
                 });
                 case 'value':
                 default: return sorted.sort((a,b) => ((b.amount || 0) * (b.price || 0)) - ((a.amount || 0) * (a.price || 0)));
@@ -355,7 +348,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ tokens, portfolioValues, h
                             <option value="value">Sort by Value</option>
                             <option value="name">Sort by Name</option>
                             <option value="progress">Sort by Progress</option>
-                            <option value="profit">Sort by Profit</option>
                         </select>
                         <button onClick={onAddToken} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-semibold hover:bg-primary/90 transition-colors">
                             <PlusIcon className="w-4 h-4" />
@@ -393,6 +385,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ tokens, portfolioValues, h
                         </div>
                     )}
                 </div>
+            </div>
+
+             <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-lg p-5">
+                <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <BarChartIcon className="w-5 h-5 text-primary" />
+                    Projected Cash Flow
+                </h2>
+                <PortfolioProjectionChart 
+                    projection={portfolioProjection}
+                    isBalanceHidden={isBalanceHidden}
+                    portfolioTotalValue={portfolioValues.total}
+                />
             </div>
         </div>
     );

@@ -1,5 +1,6 @@
-import { Token, PortfolioValues, StrategyComparison, StrategyResult, StrategyStage, ExitStrategyType, TopOpportunity } from '../types';
+import { Token, PortfolioValues, StrategyComparison, StrategyResult, StrategyStage, ExitStrategyType, TopOpportunity, PortfolioProjection, ProjectedExit, AiRebalancePlan } from '../types';
 import { formatCurrency } from './formatters';
+import { GoogleGenAI, Type } from "@google/genai";
 
 export const calculatePortfolioValues = (tokens: Token[]): PortfolioValues => {
     let total = 0;
@@ -203,77 +204,83 @@ export const compareStrategies = (token: Token): StrategyComparison => {
     return { selectedStrategy, allAtOnce, winner, difference, differencePercentage };
 };
 
-export const generateAiStrategy = (
+export const generateAiStrategy = async (
     token: Partial<Token>,
     desiredProfit: number,
     riskTolerance: 'conservative' | 'moderate' | 'aggressive'
-): { stages: { percentage: number, multiplier: number }[], warning?: string } => {
+): Promise<{ stages: { percentage: number, multiplier: number }[], warning?: string }> => {
     
-    const { amount = 0, entryPrice = 0, price = 0, marketCap = 0, targetMarketCap = 0 } = token;
+    const { amount = 0, entryPrice = 0, marketCap = 0, targetMarketCap = 0, price = 0 } = token;
     const initialInvestment = amount * entryPrice;
     
     if (initialInvestment <= 0 || desiredProfit <= 0 || marketCap <= 0 || targetMarketCap <= 0 || price <= 0 || entryPrice <= 0) {
-        return { stages: [] };
+        return { stages: [], warning: "Missing critical token data for AI analysis." };
     }
 
-    const targetPrice = price * (targetMarketCap / marketCap);
-    const maxProfit = (amount * targetPrice) - initialInvestment;
-    let warning: string | undefined;
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
     
-    if (desiredProfit > maxProfit) {
-        warning = `Profit goal exceeds max potential of ${formatCurrency(maxProfit)}. Strategy adjusted to target max.`;
-        desiredProfit = maxProfit;
-    }
-        
-    const riskFactors = {
-        conservative: { stages: 4, startMultiplier: 2, multiplierStep: 2 },
-        moderate: { stages: 3, startMultiplier: 3, multiplierStep: 3 },
-        aggressive: { stages: 2, startMultiplier: 5, multiplierStep: 5 }
-    };
-
-    const config = riskFactors[riskTolerance];
-    const stages: { percentage: number, multiplier: number }[] = [];
+    const prompt = `You are a crypto investment strategist. Create a staged exit plan for a token.
     
-    const percentages = {
-        conservative: [40, 30, 20, 10],
-        moderate: [33.3, 33.3, 33.4],
-        aggressive: [50, 50],
-    }[riskTolerance];
+    Token Data:
+    - Symbol: ${token.symbol || 'N/A'}
+    - Current Price: ${formatCurrency(price)}
+    - Entry Price: ${formatCurrency(entryPrice)}
+    - Current Market Cap: ${formatCurrency(marketCap)}
+    - Target Market Cap: ${formatCurrency(targetMarketCap)}
+    
+    User Goals:
+    - Desired Profit: ${formatCurrency(desiredProfit)}
+    - Risk Tolerance: ${riskTolerance}
+    
+    Instructions:
+    1. Create a series of exit stages. Each stage must have a "percentage" of the total tokens to sell and a profit "multiplier" based on the entry price.
+    2. The sum of all "percentage" values must be exactly 100.
+    3. The profit from the plan should aim to meet the desired profit without exceeding the token's maximum potential profit at its target market cap.
+    4. If the desired profit is unrealistic, create a plan that maximizes profit within the token's potential and add a "warning" message explaining this.
+    5. Base the number of stages and multiplier values on the risk tolerance (e.g., conservative = more stages, lower multipliers).
+    
+    Return ONLY a valid JSON object matching the provided schema.`;
 
-    for (let i = 0; i < config.stages; i++) {
-        const multiplier = config.startMultiplier + (i * config.multiplierStep);
-        stages.push({
-            percentage: percentages[i],
-            multiplier: multiplier,
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        stages: {
+                            type: Type.ARRAY,
+                            description: 'The exit stages.',
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    percentage: { type: Type.NUMBER, description: 'Percentage of tokens to sell.' },
+                                    multiplier: { type: Type.NUMBER, description: 'Profit multiplier from entry price.' },
+                                },
+                                required: ['percentage', 'multiplier'],
+                            },
+                        },
+                        warning: { type: Type.STRING, description: 'A warning if the profit goal is unachievable.' },
+                    },
+                },
+            },
         });
-    }
+        
+        const result = JSON.parse(response.text);
+        
+        // Basic validation
+        if (!result.stages || !Array.isArray(result.stages)) {
+            throw new Error("Invalid AI response: 'stages' array is missing.");
+        }
+        
+        return result;
 
-    const simulatedResult = calculateTokenStrategy(token as Token, stages);
-    if (simulatedResult.profit < desiredProfit * 0.9) {
-       stages.length = 0;
-       const firstMultiplier = 2;
-       const firstSellPercentage = Math.min(100, (initialInvestment / (amount * entryPrice * firstMultiplier)) * 100);
-       
-       stages.push({ percentage: firstSellPercentage, multiplier: firstMultiplier });
-       
-       const remainingAmount = amount * (1 - (firstSellPercentage / 100));
-       const profitNeeded = desiredProfit - ( (amount * firstSellPercentage/100 * entryPrice * firstMultiplier) - (amount * firstSellPercentage/100 * entryPrice));
-       const valueNeeded = profitNeeded + (remainingAmount * entryPrice);
-       const priceNeeded = remainingAmount > 0 ? valueNeeded / remainingAmount : 0;
-       const secondMultiplier = entryPrice > 0 ? priceNeeded / entryPrice : 0;
-
-       if (remainingAmount > 0.0001 && secondMultiplier > firstMultiplier) {
-         stages.push({ percentage: 100 - firstSellPercentage, multiplier: secondMultiplier });
-       }
+    } catch (error) {
+        console.error("Error generating AI strategy:", error);
+        throw new Error("The AI failed to generate a strategy. Please try again.");
     }
-    
-    const totalPercent = stages.reduce((acc, s) => acc + s.percentage, 0);
-    if(totalPercent > 0 && Math.abs(100 - totalPercent) > 0.1) {
-       const factor = 100 / totalPercent;
-       stages.forEach(s => s.percentage *= factor);
-    }
-
-    return { stages, warning };
 };
 
 export const findTopOpportunities = (tokens: Token[]): TopOpportunity[] => {
@@ -292,95 +299,142 @@ export const findTopOpportunities = (tokens: Token[]): TopOpportunity[] => {
     return opportunities.sort((a, b) => b.potentialMultiplier - a.potentialMultiplier).slice(0, 5);
 };
 
-export const getRebalanceCandidates = (tokens: Token[]) => {
-    const totalValue = tokens.reduce((acc, t) => acc + (t.amount || 0) * (t.price || 0), 0);
+export const getAiRebalancePlan = async (tokens: Token[], goal: 'profit' | 'risk' | 'accelerate'): Promise<AiRebalancePlan> => {
+    if (tokens.length < 2) {
+        return { sells: [], buy: null, rationale: "Rebalancing requires at least two assets." };
+    }
+    
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+    
+    const portfolioSummary = tokens.map(t => ({
+        symbol: t.symbol,
+        value_usd: (t.amount || 0) * (t.price || 0),
+        pnl_percent: (t.entryPrice > 0 ? ((t.price - t.entryPrice) / t.entryPrice) * 100 : 0),
+        progress_to_target_percent: (t.marketCap > 0 && t.targetMarketCap > 0 ? (t.marketCap / t.targetMarketCap) * 100 : 0),
+        potential_multiplier: (t.marketCap > 0 && t.targetMarketCap > t.marketCap ? t.targetMarketCap / t.marketCap : 1),
+        conviction: t.conviction
+    }));
+    
+    const goalDescription = {
+        profit: "Take Profits: Secure gains from tokens that are near their target or have performed well.",
+        risk: "Reduce Risk: Trim oversized positions to diversify and protect the portfolio from a single asset's volatility.",
+        accelerate: "Accelerate Growth: Move capital from underperforming assets to those with higher potential."
+    };
+    
+    const prompt = `You are a crypto portfolio optimization expert. My portfolio is:
+    ${JSON.stringify(portfolioSummary, null, 2)}
+    
+    My primary goal is: "${goalDescription[goal]}"
+    
+    Instructions:
+    1. Analyze the portfolio based on my goal.
+    2. Identify up to 3 tokens to SELL. For each, specify the "symbol" and the "percentage" of that holding to sell (e.g., 10, 20, 25).
+    3. Identify ONE token to BUY with the proceeds. It must be from the existing portfolio. Specify its "symbol".
+    4. Provide a top-level "rationale" summarizing your overall strategy in one or two sentences.
+    
+    Return ONLY a valid JSON object matching the provided schema.`;
+    
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        sells: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    symbol: { type: Type.STRING },
+                                    percentage: { type: Type.NUMBER },
+                                },
+                                required: ['symbol', 'percentage'],
+                            }
+                        },
+                        buy: {
+                            type: Type.OBJECT,
+                            properties: {
+                                symbol: { type: Type.STRING },
+                            },
+                        },
+                        rationale: { type: Type.STRING }
+                    },
+                     required: ['sells', 'rationale'],
+                }
+            }
+        });
+        
+        const plan = JSON.parse(response.text);
+        
+        if (!plan.sells || !plan.rationale) {
+             throw new Error("Invalid AI response format.");
+        }
 
-    if (tokens.length < 2 || totalValue === 0) {
-        return { profit: [], risk: [], accelerate: [], buy: [] };
+        return plan;
+
+    } catch (error) {
+        console.error("Error generating AI rebalance plan:", error);
+        throw new Error("Could not generate an AI rebalancing plan.");
+    }
+};
+
+export const calculatePortfolioProjection = (tokens: Token[]): PortfolioProjection => {
+    const projectedExits: ProjectedExit[] = [];
+    if (!tokens || tokens.length === 0) {
+        return { projectedExits: [] };
     }
 
-    const buyConvictionWeights = { low: 0.7, medium: 1.0, high: 1.5 };
-    const sellConvictionWeights = { low: 1.5, medium: 1.0, high: 0.5 };
+    const currentPortfolioTotal = tokens.reduce((sum, token) => sum + (token.amount * token.price), 0);
 
-    const analyzedTokens = tokens.map(token => {
-        const value = (token.amount || 0) * (token.price || 0);
-        const marketCap = token.marketCap || 0;
-        const targetMarketCap = token.targetMarketCap || 0;
-        const entryPrice = token.entryPrice || 0;
-        const price = token.price || 0;
-        const conviction = token.conviction || 'medium';
+    tokens.forEach(token => {
+        if (!token.price || token.price <= 0 || !token.amount || token.amount <= 0) return;
 
-        return {
-            ...token,
-            value,
-            conviction,
-            portfolioWeight: value / totalValue,
-            progress: targetMarketCap > 0 ? marketCap / targetMarketCap : 0,
-            pnlRatio: entryPrice > 0 ? (price - entryPrice) / entryPrice : 0,
-            potentialMultiplier: marketCap > 0 && targetMarketCap > marketCap ? targetMarketCap / marketCap : 1,
+        const tokenCurrentValue = token.amount * token.price;
+        const strategy = compareStrategies(token).selectedStrategy;
+        
+        const getProjectedTotal = (exitPrice: number) => {
+             const tokenNewValue = token.amount * exitPrice;
+             return currentPortfolioTotal - tokenCurrentValue + tokenNewValue;
         };
-    }).filter(t => t.value > 1);
-
-    if (analyzedTokens.length < 2) {
-        return { profit: [], risk: [], accelerate: [], buy: [] };
-    }
-
-    // Sort all tokens by a score combining potential and conviction to find the best buy candidates
-    const buyCandidates = [...analyzedTokens].sort((a, b) => {
-        const scoreA = a.potentialMultiplier * buyConvictionWeights[a.conviction];
-        const scoreB = b.potentialMultiplier * buyConvictionWeights[b.conviction];
-        return scoreB - scoreA;
+        
+        if (strategy.profitStages && strategy.profitStages.length > 0) {
+            let totalPercentageSold = 0;
+            strategy.profitStages.forEach(stage => {
+                if (stage.price > token.price) { 
+                    projectedExits.push({
+                        projectedPortfolioValue: getProjectedTotal(stage.price),
+                        cashOutValue: (token.amount * (stage.percentage / 100)) * stage.price,
+                        tokenSymbol: token.symbol,
+                        tokenImageUrl: token.imageUrl
+                    });
+                    totalPercentageSold += stage.percentage;
+                }
+            });
+            
+            if (totalPercentageSold < 99.9 && strategy.targetPrice > token.price) {
+                const remainingPercentage = 100 - totalPercentageSold;
+                const lastStagePrice = strategy.profitStages.length > 0 ? strategy.profitStages[strategy.profitStages.length - 1].price : 0;
+                if (strategy.targetPrice > lastStagePrice) {
+                    projectedExits.push({
+                        projectedPortfolioValue: getProjectedTotal(strategy.targetPrice),
+                        cashOutValue: (token.amount * (remainingPercentage / 100)) * strategy.targetPrice,
+                        tokenSymbol: token.symbol,
+                        tokenImageUrl: token.imageUrl
+                    });
+                }
+            }
+        } else if (strategy.targetPrice > token.price) {
+            projectedExits.push({
+                projectedPortfolioValue: getProjectedTotal(strategy.targetPrice),
+                cashOutValue: token.amount * strategy.targetPrice,
+                tokenSymbol: token.symbol,
+                tokenImageUrl: token.imageUrl
+            });
+        }
     });
 
-    // Define conviction-based thresholds for taking profit.
-    const profitThresholds = {
-        low: 0.80,    // Suggest selling low conviction tokens earlier
-        medium: 0.90, // Standard threshold
-        high: 0.95,   // Let high conviction tokens run longer
-    };
-
-    // Identify candidates for selling based on different strategic goals
-    const profitCandidates = analyzedTokens
-        .filter(t => t.progress >= profitThresholds[t.conviction]) // Dynamic threshold
-        .sort((a, b) => {
-            // Prioritize the one that has exceeded its threshold by the most
-            const progressExcessA = a.progress - profitThresholds[a.conviction];
-            const progressExcessB = b.progress - profitThresholds[b.conviction];
-            return progressExcessB - progressExcessA;
-        })
-        .slice(0, 3);
-
-    const riskCandidates = analyzedTokens
-        .filter(t => t.portfolioWeight > 0.40) // Over-concentrated tokens
-        .sort((a, b) => b.portfolioWeight - a.portfolioWeight)
-        .slice(0, 3);
-
-    const accelerateCandidates = analyzedTokens
-        .filter(t => t.pnlRatio < 0) // Underperforming tokens
-        .map(t => ({
-            ...t,
-            // Score losers by weighing loss against potential, amplified by conviction.
-            // A higher score is worse (stronger sell candidate).
-            loserScore: ((t.pnlRatio * -1) / t.potentialMultiplier) * sellConvictionWeights[t.conviction]
-        }))
-        .sort((a, b) => b.loserScore - a.loserScore)
-        .slice(0, 3);
-    
-    // Create a set of all tokens suggested for selling
-    const sellIds = new Set([...profitCandidates, ...riskCandidates, ...accelerateCandidates].map(t => t.id));
-    
-    // Prioritize candidates for buying that are not also suggested for selling.
-    const nonSellBuyCandidates = buyCandidates.filter(t => !sellIds.has(t.id));
-
-    // If there's a good candidate that isn't a "sell" candidate, it's our top choice.
-    // Otherwise, fall back to the highest potential token overall, even if it is a "sell" candidate.
-    const finalBuyCandidate = nonSellBuyCandidates.length > 0 ? nonSellBuyCandidates[0] : (buyCandidates[0] || null);
-
-    return {
-        profit: profitCandidates,
-        risk: riskCandidates,
-        accelerate: accelerateCandidates,
-        // The workbench expects an array, so we wrap the single best candidate.
-        buy: finalBuyCandidate ? [finalBuyCandidate] : [],
-    };
+    return { projectedExits: projectedExits.sort((a, b) => a.projectedPortfolioValue - b.projectedPortfolioValue) };
 };
