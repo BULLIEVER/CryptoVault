@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import { Token, PortfolioValues, PortfolioHistoryEntry, TopOpportunity, Settings, Conviction, PortfolioProjection } from '../types';
 import { formatCurrency, formatTokenPrice, formatCompactNumber } from '../utils/formatters';
@@ -53,6 +54,7 @@ const TokenListItem: React.FC<{ token: Token; onView: () => void; onEdit: () => 
     const value = (token.amount || 0) * (token.price || 0);
     const progress = (token.marketCap || 0) > 0 && (token.targetMarketCap || 0) > 0 ? Math.min(((token.marketCap || 0) / (token.targetMarketCap || 0)) * 100, 100) : 0;
     const conviction = token.conviction || 'medium';
+    const potentialMultiplier = (token.marketCap || 0) > 0 && (token.targetMarketCap || 0) > 0 ? (token.targetMarketCap / token.marketCap) : 0;
     
     const { selectedStrategy } = React.useMemo(() => compareStrategies(token), [token]);
     const stages = selectedStrategy.profitStages;
@@ -93,12 +95,11 @@ const TokenListItem: React.FC<{ token: Token; onView: () => void; onEdit: () => 
         }
     };
 
-    // UI/UX Overhaul based on expert review
     return (
-        <div className={`flex items-center p-4 gap-6 hover:bg-[var(--color-accent)] transition-colors cursor-pointer ${flashClass}`} onClick={handleItemClick}>
+        <div className={`flex items-center p-4 gap-4 hover:bg-[var(--color-accent)] transition-colors cursor-pointer ${flashClass}`} onClick={handleItemClick}>
             
             {/* Token Info (Column 1) */}
-            <div className="flex items-center gap-4 w-2/5 md:w-1/3 flex-shrink-0">
+            <div className="flex items-center gap-4 w-1/3 flex-shrink-0">
                 <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center bg-primary/10">
                     {token.imageUrl ? <img src={token.imageUrl} alt={token.name || 'Token'} className="w-full h-full object-cover" /> : <span className="font-bold text-primary">{(token.symbol || '??').substring(0, 2)}</span>}
                 </div>
@@ -124,18 +125,22 @@ const TokenListItem: React.FC<{ token: Token; onView: () => void; onEdit: () => 
             </div>
 
             {/* Financials (Column 2) */}
-            <div className="hidden md:flex items-center gap-6 text-sm flex-grow w-2/5 md:w-1/3">
-                <div className="w-28 text-right">
-                    <p className="font-semibold">{isBalanceHidden ? '*****' : formatCurrency(value)}</p>
+            <div className="hidden md:grid grid-cols-4 gap-4 text-sm text-right w-1/3">
+                <div>
+                    <p className="font-semibold truncate">{isBalanceHidden ? '*****' : formatCurrency(value)}</p>
                     <p className="text-xs text-muted-foreground">Value</p>
                 </div>
-                <div className="w-28 text-right">
-                     <p className="font-semibold">{isBalanceHidden ? '*****' : formatTokenPrice(token.entryPrice || 0)}</p>
+                <div>
+                     <p className="font-semibold truncate">{isBalanceHidden ? '*****' : formatTokenPrice(token.entryPrice || 0)}</p>
                     <p className="text-xs text-muted-foreground">Avg. Entry</p>
                 </div>
-                 <div className="w-28 text-right">
-                    <p className="font-semibold">{formatTokenPrice(token.price || 0)}</p>
+                 <div>
+                    <p className="font-semibold truncate">{formatTokenPrice(token.price || 0)}</p>
                     <p className="text-xs text-muted-foreground">Price</p>
+                </div>
+                <div>
+                    <p className="font-semibold text-success">{potentialMultiplier > 1 ? `${potentialMultiplier.toFixed(1)}x` : 'N/A'}</p>
+                    <p className="text-xs text-muted-foreground">Potential</p>
                 </div>
             </div>
 
@@ -186,7 +191,7 @@ const TokenListItem: React.FC<{ token: Token; onView: () => void; onEdit: () => 
             </div>
 
             {/* Actions (Column 4) */}
-            <div className="flex justify-end items-center space-x-0 w-20">
+            <div className="flex justify-end items-center">
                  <button onClick={(e) => { e.stopPropagation(); onEdit(); }} className="p-3 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" aria-label="Edit Token"><PencilIcon className="w-4 h-4" /></button>
                  <button onClick={(e) => { e.stopPropagation(); onRemove(); }} className="p-3 rounded-full text-muted-foreground hover:bg-muted hover:text-destructive transition-colors" aria-label="Remove Token"><Trash2Icon className="w-4 h-4" /></button>
             </div>
@@ -197,24 +202,29 @@ const TokenListItem: React.FC<{ token: Token; onView: () => void; onEdit: () => 
 
 const TokenListItemSkeleton: React.FC = () => (
     <div className="flex items-center p-4 gap-4">
-        <div className="flex items-center gap-4 w-1/3 flex-grow">
+        <div className="flex items-center gap-4 w-1/3 flex-shrink-0">
             <div className="w-10 h-10 rounded-full flex-shrink-0 bg-muted loading-shimmer"></div>
             <div className="truncate w-full">
                 <div className="h-5 w-3/4 bg-muted rounded loading-shimmer"></div>
                 <div className="h-4 w-1/4 bg-muted rounded mt-2 loading-shimmer"></div>
             </div>
         </div>
-        <div className="hidden md:flex items-center gap-6 text-sm">
-            <div className="w-28"><div className="h-5 w-3/4 bg-muted rounded ml-auto loading-shimmer"></div><div className="h-3 w-1/2 bg-muted rounded mt-1 ml-auto loading-shimmer"></div></div>
-            <div className="w-28"><div className="h-5 w-3/4 bg-muted rounded ml-auto loading-shimmer"></div><div className="h-3 w-1/2 bg-muted rounded mt-1 ml-auto loading-shimmer"></div></div>
-            <div className="w-28"><div className="h-5 w-3/4 bg-muted rounded ml-auto loading-shimmer"></div><div className="h-3 w-1/2 bg-muted rounded mt-1 ml-auto loading-shimmer"></div></div>
+        <div className="hidden md:grid grid-cols-4 gap-4 text-sm w-1/3">
+            <div className="text-right"><div className="h-5 w-3/4 bg-muted rounded ml-auto loading-shimmer"></div><div className="h-3 w-1/2 bg-muted rounded mt-1 ml-auto loading-shimmer"></div></div>
+            <div className="text-right"><div className="h-5 w-3/4 bg-muted rounded ml-auto loading-shimmer"></div><div className="h-3 w-1/2 bg-muted rounded mt-1 ml-auto loading-shimmer"></div></div>
+            <div className="text-right"><div className="h-5 w-3/4 bg-muted rounded ml-auto loading-shimmer"></div><div className="h-3 w-1/2 bg-muted rounded mt-1 ml-auto loading-shimmer"></div></div>
+            <div className="text-right"><div className="h-5 w-3/4 bg-muted rounded ml-auto loading-shimmer"></div><div className="h-3 w-1/2 bg-muted rounded mt-1 ml-auto loading-shimmer"></div></div>
         </div>
-        <div className="hidden md:block w-1/4">
-            <div className="h-3 w-full bg-muted rounded-full loading-shimmer"></div>
+        <div className="flex-1">
+            <div className="h-2.5 w-full bg-muted rounded-full loading-shimmer"></div>
+            <div className="flex justify-between h-3 w-full mt-1.5">
+                <div className="w-1/4 bg-muted rounded loading-shimmer"></div>
+                <div className="w-1/4 bg-muted rounded loading-shimmer"></div>
+            </div>
         </div>
-        <div className="hidden md:flex justify-end items-center space-x-2 w-20">
-            <div className="w-9 h-9 rounded-full bg-muted loading-shimmer"></div>
-            <div className="w-9 h-9 rounded-full bg-muted loading-shimmer"></div>
+        <div className="flex justify-end items-center">
+            <div className="w-10 h-10 rounded-full bg-muted loading-shimmer"></div>
+            <div className="w-10 h-10 rounded-full bg-muted loading-shimmer"></div>
         </div>
     </div>
 );
