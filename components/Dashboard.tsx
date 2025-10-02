@@ -4,10 +4,11 @@ import React from 'react';
 import { Token, PortfolioValues, PortfolioHistoryEntry, TopOpportunity, Settings, Conviction, PortfolioProjection } from '../types';
 import { formatCurrency, formatTokenPrice, formatCompactNumber } from '../utils/formatters';
 import { PortfolioCompositionChart } from './charts/PortfolioCompositionChart';
-import { WalletIcon, TargetIcon, TrendingUpIcon, RocketIcon, PlusIcon, SearchIcon, PencilIcon, Trash2Icon, AlertTriangleIcon, CompareHorizontalIcon, ArrowUpCircleIcon, ArrowDownCircleIcon, CheckCircleIcon, BarChartIcon } from './ui/Icons';
+import { WalletIcon, TrendingUpIcon, RocketIcon, PlusIcon, SearchIcon, PencilIcon, Trash2Icon, AlertTriangleIcon, CompareHorizontalIcon, ArrowUpCircleIcon, ArrowDownCircleIcon, CheckCircleIcon } from './ui/Icons';
 import { compareStrategies } from '../utils/portfolioCalculations';
 import { PortfolioProjectionChart } from './charts/PortfolioProjectionChart';
 import { PortfolioHistoryChart } from './charts/PortfolioHistoryChart';
+import { rebalancePortfolio } from '../utils/quickRebalancing';
 
 interface DashboardProps {
     tokens: Token[];
@@ -23,6 +24,7 @@ interface DashboardProps {
     onEditToken: (token: Token) => void;
     onRemoveToken: (tokenId: string) => void;
     onOpenWorkbench: () => void;
+    onOpenAdvancedOptimizer: () => void;
     topOpportunities: TopOpportunity[];
 }
 
@@ -237,13 +239,13 @@ const TokenListItemSkeleton: React.FC = () => (
 
 
 const TopOpportunitiesCard: React.FC<{ opportunities: TopOpportunity[]; onEditToken: (token: Token) => void; isBalanceHidden: boolean; }> = ({ opportunities, onEditToken, isBalanceHidden }) => (
-    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-5 shadow-lg animate-fade-in h-full">
-        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-4 shadow-lg animate-fade-in h-80 flex flex-col">
+        <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
             <RocketIcon className="w-5 h-5 text-primary" />
             Top Potential
         </h2>
         {opportunities.length > 0 ? (
-            <div className="space-y-4">
+            <div className="space-y-2 flex-1 overflow-y-auto">
                 {opportunities.map(token => (
                     <div key={token.id} className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-3 truncate">
@@ -264,7 +266,7 @@ const TopOpportunitiesCard: React.FC<{ opportunities: TopOpportunity[]; onEditTo
                 ))}
             </div>
         ) : (
-            <div className="text-center py-4 flex flex-col justify-center h-full">
+            <div className="text-center py-8 flex flex-col justify-center flex-1">
                 <SearchIcon className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
                 <p className="text-sm font-medium text-muted-foreground">No opportunities found.</p>
                 <p className="text-xs text-muted-foreground mt-1">Set market cap targets for your tokens.</p>
@@ -273,36 +275,124 @@ const TopOpportunitiesCard: React.FC<{ opportunities: TopOpportunity[]; onEditTo
     </div>
 );
 
-const PortfolioOptimizerCard: React.FC<{ tokens: Token[]; onOptimize: () => void; }> = ({ tokens, onOptimize }) => (
-    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-5 shadow-lg animate-fade-in h-full md:col-span-2 lg:col-span-1 flex flex-col">
-        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <CompareHorizontalIcon className="w-5 h-5 text-primary" />
-            Portfolio Optimizer
-        </h2>
-        {tokens.length > 1 ? (
-             <div className="flex-grow flex flex-col justify-center items-center text-center">
-                <p className="text-sm text-muted-foreground mb-4">
-                    Use AI to analyze your portfolio and generate a rebalancing plan to accelerate growth, reduce risk, or take profits.
-                </p>
-                <button 
-                    onClick={onOptimize}
-                    className="w-full px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-semibold hover:bg-primary/90 transition-colors"
-                >
-                    Open AI Optimizer
-                </button>
+// COMPLETELY NEW REBALANCE UI - v3.0 - FORCE REFRESH
+const PortfolioOptimizerCard: React.FC<{ tokens: Token[]; onOptimize: () => void; onAdvancedOptimize: () => void; isBalanceHidden: boolean; }> = ({ tokens, onOptimize, onAdvancedOptimize, isBalanceHidden }) => {
+    const [rotationResult, setRotationResult] = React.useState(null);
+
+    React.useEffect(() => {
+        console.log('REBALANCE UI v3.0 - FORCE REFRESH');
+        if (tokens.length > 1) {
+            try {
+                const result = rebalancePortfolio(tokens, 'smart_rotation');
+                setRotationResult(result);
+            } catch (error) {
+                console.error('Rebalancing error:', error);
+                setRotationResult(null);
+            }
+        } else {
+            setRotationResult(null);
+        }
+    }, [tokens]);
+
+    return (
+        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-4 shadow-lg h-80 flex flex-col" data-version="3.0">
+            <div className="flex items-center gap-3 mb-4">
+                <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+                    <CompareHorizontalIcon className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                    <h2 className="text-lg font-bold text-foreground">Smart Rotation</h2>
+                    <p className="text-xs text-muted-foreground">AI-powered portfolio optimization</p>
+                </div>
             </div>
-        ) : (
-            <div className="text-center py-4 h-full flex flex-col justify-center">
-                <CheckCircleIcon className="w-10 h-10 text-success mx-auto mb-2" />
-                <p className="text-sm font-medium text-muted-foreground">Add more tokens</p>
-                <p className="text-xs text-muted-foreground mt-1">Optimization requires at least two assets.</p>
-            </div>
-        )}
-    </div>
-);
+            
+            {tokens.length > 1 ? (
+                <div className="flex-grow flex flex-col">
+                    {rotationResult && rotationResult.actions && rotationResult.actions.length > 0 ? (
+                        <div className="space-y-2">
+                            <div className="text-center mb-3">
+                                <span className="inline-block px-3 py-1 bg-primary/10 text-primary text-sm rounded-full border border-primary/20">
+                                    Smart rotation recommendations
+                                </span>
+                            </div>
+                            
+                            {rotationResult.actions.map((action, index) => {
+                                const token = tokens.find(t => t.symbol === action.symbol);
+                                return (
+                                    <div key={index} className={`p-3 rounded-lg border ${
+                                        action.action === 'SELL' 
+                                            ? 'border-red-500/30 bg-red-500/10' 
+                                            : 'border-green-500/30 bg-green-500/10'
+                                    }`}>
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center bg-[var(--color-background)] border border-[var(--color-border)]">
+                                                    {token?.imageUrl ? (
+                                                        <img 
+                                                            src={token.imageUrl} 
+                                                            alt={action.symbol || 'Token'} 
+                                                            className="w-full h-full object-cover" 
+                                                        />
+                                                    ) : (
+                                                        <span className="text-sm font-bold text-foreground">
+                                                            {action.symbol?.substring(0, 2) || '??'}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div>
+                                                    <div className="font-semibold text-sm text-foreground">{action.symbol || 'Unknown'}</div>
+                                                    <div className="text-xs text-muted-foreground">{action.reason || 'No reason'}</div>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="text-right">
+                                                <div className={`px-2 py-1 rounded text-xs font-bold text-white ${
+                                                    action.action === 'SELL' 
+                                                        ? 'bg-red-500' 
+                                                        : 'bg-green-500'
+                                                }`}>
+                                                    {action.action}
+                                                </div>
+                                                <div className="text-sm font-semibold text-foreground mt-1">
+                                                    {isBalanceHidden ? '*****' : formatCurrency(action.amount || 0)}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            
+                            <div className="text-center mt-3">
+                                <span className="inline-block px-3 py-1 bg-[var(--color-muted)] text-muted-foreground text-xs rounded-full border border-[var(--color-border)]">
+                                    {rotationResult.summary}
+                                </span>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="text-center py-8 flex flex-col justify-center h-full">
+                            <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-3">
+                                <CheckCircleIcon className="w-6 h-6 text-green-500" />
+                            </div>
+                            <h3 className="text-lg font-semibold text-foreground mb-1">Portfolio Optimized</h3>
+                            <p className="text-sm text-muted-foreground">No rotation needed at this time.</p>
+                        </div>
+                    )}
+                </div>
+            ) : (
+                <div className="text-center py-8 h-full flex flex-col justify-center">
+                    <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-3">
+                        <CheckCircleIcon className="w-6 h-6 text-primary" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-foreground mb-1">Add More Tokens</h3>
+                    <p className="text-sm text-muted-foreground">Rebalancing requires at least two assets.</p>
+                </div>
+            )}
+        </div>
+    );
+};
 
 
-export const Dashboard: React.FC<DashboardProps> = ({ tokens, portfolioValues, history, portfolioProjection, sortOrder, isUpdating, isBalanceHidden, onSortChange, onAddToken, onViewToken, onEditToken, onRemoveToken, topOpportunities, onOpenWorkbench }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ tokens, portfolioValues, history, portfolioProjection, sortOrder, isUpdating, isBalanceHidden, onSortChange, onAddToken, onViewToken, onEditToken, onRemoveToken, topOpportunities, onOpenWorkbench, onOpenAdvancedOptimizer }) => {
     
     const sortedTokens = React.useMemo(() => {
         const sorted = [...tokens];
@@ -324,8 +414,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ tokens, portfolioValues, h
     }, [tokens, sortOrder]);
     
     return (
-        <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 animate-fade-in">
+        <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 animate-fade-in">
                 {isUpdating && tokens.length === 0 ? (
                     <>
                         <StatsCardSkeleton />
@@ -336,21 +426,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ tokens, portfolioValues, h
                 ) : (
                     <>
                         <StatsCard title="Current Value" value={formatCurrency(portfolioValues.total)} description="Total portfolio value" icon={<WalletIcon className="w-5 h-5 text-primary" />} isConfidential isBalanceHidden={isBalanceHidden} />
-                        <StatsCard title="Target Value" value={formatCurrency(portfolioValues.target)} description="Potential future value" icon={<TargetIcon className="w-5 h-5 text-primary" />} isConfidential isBalanceHidden={isBalanceHidden} />
+                        <StatsCard title="Target Value" value={formatCurrency(portfolioValues.target)} description="Potential future value" icon={<TrendingUpIcon className="w-5 h-5 text-primary" />} isConfidential isBalanceHidden={isBalanceHidden} />
                         <StatsCard title="Growth Potential" value={`${portfolioValues.growthMultiplier.toFixed(2)}x`} description={`${portfolioValues.growthPercentage.toFixed(1)}% portfolio growth`} icon={<TrendingUpIcon className="w-5 h-5 text-success" />} glowClass="shadow-glow-success" />
                         <StatsCard title="Highest Potential" value={portfolioValues.highestPotentialToken?.symbol || 'N/A'} description="Token with highest growth" icon={<RocketIcon className="w-5 h-5 text-primary" />} glowClass="shadow-glow-primary" />
                     </>
                 )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-5 shadow-lg overflow-hidden">
-                    <h2 className="text-lg font-semibold mb-4">Composition</h2>
-                    <PortfolioCompositionChart tokens={tokens} isBalanceHidden={isBalanceHidden} />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-4 shadow-lg overflow-hidden h-96">
+                    <h2 className="text-lg font-semibold mb-3">Composition</h2>
+                    <div className="h-full">
+                        <PortfolioCompositionChart tokens={tokens} isBalanceHidden={isBalanceHidden} />
+                    </div>
                 </div>
                 <TopOpportunitiesCard opportunities={topOpportunities} onEditToken={onEditToken} isBalanceHidden={isBalanceHidden} />
-                <PortfolioOptimizerCard tokens={tokens} onOptimize={onOpenWorkbench} />
+                <div className="md:col-span-2 lg:col-span-1">
+                    <PortfolioOptimizerCard tokens={tokens} onOptimize={onOpenWorkbench} onAdvancedOptimize={onOpenAdvancedOptimizer} isBalanceHidden={isBalanceHidden} />
+                </div>
             </div>
+
 
             <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-lg">
                 <div className="flex justify-between items-center p-4 border-b border-[var(--color-border)]">
@@ -410,7 +505,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tokens, portfolioValues, h
 
              <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-lg p-5">
                 <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                    <BarChartIcon className="w-5 h-5 text-primary" />
+                    <TrendingUpIcon className="w-5 h-5 text-primary" />
                     Projected Cash Flow
                 </h2>
                 <PortfolioProjectionChart 

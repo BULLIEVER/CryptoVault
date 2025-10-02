@@ -1,6 +1,6 @@
 import React from 'react';
 
-export type ExitStrategyType = 'targetMC' | 'ladder' | 'conservative' | 'moonOrBust' | 'ai' | 'progressive';
+export type ExitStrategyType = 'targetMC' | 'ladder' | 'conservative' | 'moonOrBust' | 'ai' | 'progressive' | 'kelly';
 export type Conviction = 'low' | 'medium' | 'high';
 
 export interface Token {
@@ -119,4 +119,68 @@ export interface AiRebalancePlan {
     sells: { symbol: string; percentage: number; rationale?: string }[];
     buy: { symbol: string; rationale?: string } | null;
     rationale: string;
+}
+
+// Advanced Portfolio Optimization Types
+export interface RiskMetrics {
+    sharpeRatio: number;
+    sortinoRatio: number;
+    maxDrawdown: number;
+    volatility: number;
+    var95: number; // Value at Risk 95%
+    beta: number;
+    alpha: number;
+    correlation: number;
+}
+
+export interface OptimizationGoal {
+    type: 'maximize_return' | 'minimize_risk' | 'maximize_sharpe' | 'equal_weight' | 'momentum' | 'mean_reversion';
+    targetReturn?: number;
+    maxRisk?: number;
+    rebalanceThreshold?: number;
+    timeHorizon: 'short' | 'medium' | 'long';
+}
+
+export interface AdvancedRebalancePlan {
+    goal: OptimizationGoal;
+    currentMetrics: RiskMetrics;
+    targetMetrics: RiskMetrics;
+    rebalanceActions: {
+        sells: { token: Token; percentage: number; reason: string; impact: number }[];
+        buys: { token: Token; amount: number; reason: string; impact: number }[];
+    };
+    expectedImprovement: {
+        returnIncrease: number;
+        riskReduction: number;
+        sharpeImprovement: number;
+    };
+    confidence: number;
+    marketConditions: {
+        volatility: 'low' | 'medium' | 'high';
+        trend: 'bullish' | 'bearish' | 'sideways';
+        sentiment: 'fear' | 'greed' | 'neutral';
+    };
+}
+
+export interface PortfolioHeatmap {
+    correlations: { [token1: string]: { [token2: string]: number } };
+    riskContribution: { [token: string]: number };
+    returnContribution: { [token: string]: number };
+    concentrationRisk: number;
+}
+
+export interface PerformanceAnalytics {
+    totalReturn: number;
+    annualizedReturn: number;
+    volatility: number;
+    sharpeRatio: number;
+    sortinoRatio: number;
+    maxDrawdown: number;
+    calmarRatio: number;
+    winRate: number;
+    profitFactor: number;
+    alpha: number;
+    beta: number;
+    trackingError: number;
+    informationRatio: number;
 }

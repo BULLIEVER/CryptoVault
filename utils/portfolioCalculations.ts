@@ -49,31 +49,151 @@ export const STRATEGY_CONFIG = {
         // Stages are calculated dynamically based on the token's specific target
     },
     ladder: {
-        name: 'Ladder Exit',
-        description: 'Sell 25% at 2x, 4x, 8x, and 16x profit multipliers.',
-        stages: [
-            { percentage: 25, multiplier: 2 },
-            { percentage: 25, multiplier: 4 },
-            { percentage: 25, multiplier: 8 },
-            { percentage: 25, multiplier: 16 },
-        ]
+        name: 'Smart Ladder Exit',
+        description: 'Dynamic ladder based on token potential. Higher potential = later exits, lower potential = earlier exits.',
+        // Stages calculated dynamically based on potential
     },
     conservative: {
-        name: 'Conservative Exit',
-        description: 'Take profits earlier. Sell 33.3% at 3x, 6x, and 10x.',
-        stages: [
-            { percentage: 33.33, multiplier: 3 },
-            { percentage: 33.33, multiplier: 6 },
-            { percentage: 33.33, multiplier: 10 },
-        ]
+        name: 'Risk-Adjusted Exit',
+        description: 'Conservative exits scaled to token potential. Low potential = early exits, high potential = later exits.',
+        // Stages calculated dynamically based on potential
     },
     moonOrBust: {
-        name: 'Moon or Bust',
-        description: 'Secure initial investment and some profit, let the rest ride. Sell 25% at 5x and 10x, hold 50%.',
-        stages: [
-            { percentage: 25, multiplier: 5 },
-            { percentage: 25, multiplier: 10 },
-        ]
+        name: 'Potential-Based Moon',
+        description: 'Secure profits early for low potential, let high potential tokens ride longer.',
+        // Stages calculated dynamically based on potential
+    },
+    kelly: {
+        name: 'Kelly Criterion Exit',
+        description: 'Mathematically optimal exits based on win probability and risk-reward ratio.',
+        // Stages calculated using Kelly Criterion
+    }
+};
+
+// Calculate dynamic exit stages based on token potential
+export const calculateDynamicStages = (token: Token, strategyType: string): { percentage: number, multiplier: number }[] => {
+    const { marketCap = 0, targetMarketCap = 0, entryPrice = 0, price = 0 } = token;
+    
+    if (marketCap <= 0 || targetMarketCap <= 0 || entryPrice <= 0 || price <= 0) {
+        return [];
+    }
+    
+    const potentialMultiplier = targetMarketCap / marketCap;
+    const currentMultiplier = price / entryPrice;
+    
+    // Categorize potential levels
+    const isLowPotential = potentialMultiplier < 5;      // < 5x potential
+    const isMediumPotential = potentialMultiplier >= 5 && potentialMultiplier < 20;  // 5x-20x potential
+    const isHighPotential = potentialMultiplier >= 20;   // > 20x potential
+    
+    switch (strategyType) {
+        case 'ladder':
+            if (isLowPotential) {
+                // Low potential: exit early and often
+                return [
+                    { percentage: 40, multiplier: Math.min(currentMultiplier * 1.5, potentialMultiplier * 0.3) },
+                    { percentage: 35, multiplier: Math.min(currentMultiplier * 2, potentialMultiplier * 0.6) },
+                    { percentage: 25, multiplier: Math.min(currentMultiplier * 3, potentialMultiplier * 0.9) },
+                ];
+            } else if (isMediumPotential) {
+                // Medium potential: balanced approach
+                return [
+                    { percentage: 25, multiplier: Math.min(currentMultiplier * 2, potentialMultiplier * 0.25) },
+                    { percentage: 30, multiplier: Math.min(currentMultiplier * 4, potentialMultiplier * 0.5) },
+                    { percentage: 25, multiplier: Math.min(currentMultiplier * 8, potentialMultiplier * 0.75) },
+                    { percentage: 20, multiplier: Math.min(currentMultiplier * 12, potentialMultiplier * 1.0) },
+                ];
+            } else {
+                // High potential: let it ride longer
+                return [
+                    { percentage: 15, multiplier: Math.min(currentMultiplier * 3, potentialMultiplier * 0.2) },
+                    { percentage: 20, multiplier: Math.min(currentMultiplier * 6, potentialMultiplier * 0.4) },
+                    { percentage: 25, multiplier: Math.min(currentMultiplier * 12, potentialMultiplier * 0.6) },
+                    { percentage: 25, multiplier: Math.min(currentMultiplier * 20, potentialMultiplier * 0.8) },
+                    { percentage: 15, multiplier: Math.min(currentMultiplier * 30, potentialMultiplier * 1.0) },
+                ];
+            }
+            
+        case 'conservative':
+            if (isLowPotential) {
+                // Low potential: very conservative
+                return [
+                    { percentage: 50, multiplier: Math.min(currentMultiplier * 1.5, potentialMultiplier * 0.4) },
+                    { percentage: 30, multiplier: Math.min(currentMultiplier * 2.5, potentialMultiplier * 0.8) },
+                    { percentage: 20, multiplier: Math.min(currentMultiplier * 4, potentialMultiplier * 1.0) },
+                ];
+            } else if (isMediumPotential) {
+                // Medium potential: moderate conservative
+                return [
+                    { percentage: 35, multiplier: Math.min(currentMultiplier * 2, potentialMultiplier * 0.3) },
+                    { percentage: 35, multiplier: Math.min(currentMultiplier * 5, potentialMultiplier * 0.6) },
+                    { percentage: 30, multiplier: Math.min(currentMultiplier * 10, potentialMultiplier * 1.0) },
+                ];
+            } else {
+                // High potential: less conservative
+                return [
+                    { percentage: 25, multiplier: Math.min(currentMultiplier * 3, potentialMultiplier * 0.2) },
+                    { percentage: 30, multiplier: Math.min(currentMultiplier * 8, potentialMultiplier * 0.5) },
+                    { percentage: 45, multiplier: Math.min(currentMultiplier * 15, potentialMultiplier * 1.0) },
+                ];
+            }
+            
+        case 'moonOrBust':
+            if (isLowPotential) {
+                // Low potential: secure profits early
+                return [
+                    { percentage: 60, multiplier: Math.min(currentMultiplier * 2, potentialMultiplier * 0.5) },
+                    { percentage: 40, multiplier: Math.min(currentMultiplier * 4, potentialMultiplier * 1.0) },
+                ];
+            } else if (isMediumPotential) {
+                // Medium potential: balanced moon strategy
+                return [
+                    { percentage: 30, multiplier: Math.min(currentMultiplier * 3, potentialMultiplier * 0.3) },
+                    { percentage: 30, multiplier: Math.min(currentMultiplier * 8, potentialMultiplier * 0.7) },
+                    // 40% held for potential moon
+                ];
+            } else {
+                // High potential: let it ride
+                return [
+                    { percentage: 20, multiplier: Math.min(currentMultiplier * 5, potentialMultiplier * 0.25) },
+                    { percentage: 20, multiplier: Math.min(currentMultiplier * 12, potentialMultiplier * 0.5) },
+                    // 60% held for potential moon
+                ];
+            }
+            
+        case 'kelly':
+            // Kelly Criterion: f* = (bp - q) / b
+            // where b = odds received (potential multiplier), p = win probability, q = loss probability
+            const winProbability = Math.min(0.7, Math.max(0.3, 1 - (potentialMultiplier / 100))); // Higher potential = lower win probability
+            const lossProbability = 1 - winProbability;
+            const kellyPercentage = Math.max(0.1, Math.min(0.5, (potentialMultiplier * winProbability - lossProbability) / potentialMultiplier));
+            
+            if (isLowPotential) {
+                // Low potential: Kelly suggests smaller position sizes
+                const adjustedKelly = kellyPercentage * 0.6; // Reduce position size for low potential
+                return [
+                    { percentage: adjustedKelly * 100, multiplier: Math.min(currentMultiplier * 2, potentialMultiplier * 0.5) },
+                    { percentage: (1 - adjustedKelly) * 100, multiplier: Math.min(currentMultiplier * 4, potentialMultiplier * 1.0) },
+                ];
+            } else if (isMediumPotential) {
+                // Medium potential: standard Kelly
+                return [
+                    { percentage: kellyPercentage * 100, multiplier: Math.min(currentMultiplier * 3, potentialMultiplier * 0.4) },
+                    { percentage: kellyPercentage * 100, multiplier: Math.min(currentMultiplier * 6, potentialMultiplier * 0.7) },
+                    { percentage: (1 - 2 * kellyPercentage) * 100, multiplier: Math.min(currentMultiplier * 10, potentialMultiplier * 1.0) },
+                ];
+            } else {
+                // High potential: Kelly suggests larger position sizes
+                const adjustedKelly = kellyPercentage * 1.2; // Increase position size for high potential
+                return [
+                    { percentage: adjustedKelly * 100, multiplier: Math.min(currentMultiplier * 5, potentialMultiplier * 0.3) },
+                    { percentage: adjustedKelly * 100, multiplier: Math.min(currentMultiplier * 10, potentialMultiplier * 0.6) },
+                    { percentage: (1 - 2 * adjustedKelly) * 100, multiplier: Math.min(currentMultiplier * 20, potentialMultiplier * 1.0) },
+                ];
+            }
+            
+        default:
+            return [];
     }
 };
 
@@ -188,8 +308,9 @@ export const compareStrategies = (token: Token): StrategyComparison => {
 
         selectedStrategy = calculateTokenStrategy(token, dynamicStages);
 
-    } else if (exitStrategy === 'ladder' || exitStrategy === 'conservative' || exitStrategy === 'moonOrBust') {
-        selectedStrategy = calculateTokenStrategy(token, STRATEGY_CONFIG[exitStrategy].stages);
+    } else if (exitStrategy === 'ladder' || exitStrategy === 'conservative' || exitStrategy === 'moonOrBust' || exitStrategy === 'kelly') {
+        const dynamicStages = calculateDynamicStages(token, exitStrategy);
+        selectedStrategy = calculateTokenStrategy(token, dynamicStages);
     } else { 
         // Default to "All at Target" for 'targetMC' or any other unhandled strategy.
         selectedStrategy = calculateTokenStrategy(token);
