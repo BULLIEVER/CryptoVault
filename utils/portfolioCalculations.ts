@@ -67,6 +67,11 @@ export const STRATEGY_CONFIG = {
         name: 'Kelly Criterion Exit',
         description: 'Mathematically optimal exits based on win probability and risk-reward ratio.',
         // Stages calculated using Kelly Criterion
+    },
+    custom: {
+        name: 'Custom Exit Strategy',
+        description: 'Your own custom exit strategy with specific sell levels and percentages.',
+        // Stages are user-defined
     }
 };
 
@@ -230,13 +235,9 @@ export const calculateTokenStrategy = (token: Token, stages?: { percentage: numb
     let remainingAmount = amount;
 
     stages.forEach(stage => {
-        let stagePrice = entryPrice * stage.multiplier;
-        if (stagePrice > targetPrice) { // Cap exit price at target price
-            stagePrice = targetPrice;
-            stage.multiplier = targetPrice / entryPrice;
-        }
-
+        const stagePrice = entryPrice * stage.multiplier;
         const amountToSell = amount * (stage.percentage / 100);
+        
         if (remainingAmount - amountToSell < -0.00001) { // Floating point precision
            return;
         }
@@ -291,6 +292,13 @@ export const compareStrategies = (token: Token): StrategyComparison => {
     // This resolves a TypeScript error where it couldn't guarantee that `STRATEGY_CONFIG[exitStrategy]` had a `stages` property.
     if (exitStrategy === 'ai' && customExitStages) {
         selectedStrategy = calculateTokenStrategy(token, customExitStages);
+    } else if (exitStrategy === 'custom' && customExitStages) {
+        // Use direct price targets from custom stages
+        const dynamicStages = customExitStages.map(stage => ({
+            percentage: stage.percentage,
+            multiplier: stage.multiplier / entryPrice
+        }));
+        selectedStrategy = calculateTokenStrategy(token, dynamicStages);
     } else if (exitStrategy === 'progressive') {
         const progressiveConfig = [
             { sellPercent: 15, progressPercent: 50 },
@@ -500,62 +508,4 @@ export const getAiRebalancePlan = async (tokens: Token[], goal: 'profit' | 'risk
         console.error("Error generating AI rebalance plan:", error);
         throw new Error("Could not generate an AI rebalancing plan.");
     }
-};
-
-export const calculatePortfolioProjection = (tokens: Token[]): PortfolioProjection => {
-    const projectedExits: ProjectedExit[] = [];
-    if (!tokens || tokens.length === 0) {
-        return { projectedExits: [] };
-    }
-
-    const currentPortfolioTotal = tokens.reduce((sum, token) => sum + (token.amount * token.price), 0);
-
-    tokens.forEach(token => {
-        if (!token.price || token.price <= 0 || !token.amount || token.amount <= 0) return;
-
-        const tokenCurrentValue = token.amount * token.price;
-        const strategy = compareStrategies(token).selectedStrategy;
-        
-        const getProjectedTotal = (exitPrice: number) => {
-             const tokenNewValue = token.amount * exitPrice;
-             return currentPortfolioTotal - tokenCurrentValue + tokenNewValue;
-        };
-        
-        if (strategy.profitStages && strategy.profitStages.length > 0) {
-            let totalPercentageSold = 0;
-            strategy.profitStages.forEach(stage => {
-                if (stage.price > token.price) { 
-                    projectedExits.push({
-                        projectedPortfolioValue: getProjectedTotal(stage.price),
-                        cashOutValue: (token.amount * (stage.percentage / 100)) * stage.price,
-                        tokenSymbol: token.symbol,
-                        tokenImageUrl: token.imageUrl
-                    });
-                    totalPercentageSold += stage.percentage;
-                }
-            });
-            
-            if (totalPercentageSold < 99.9 && strategy.targetPrice > token.price) {
-                const remainingPercentage = 100 - totalPercentageSold;
-                const lastStagePrice = strategy.profitStages.length > 0 ? strategy.profitStages[strategy.profitStages.length - 1].price : 0;
-                if (strategy.targetPrice > lastStagePrice) {
-                    projectedExits.push({
-                        projectedPortfolioValue: getProjectedTotal(strategy.targetPrice),
-                        cashOutValue: (token.amount * (remainingPercentage / 100)) * strategy.targetPrice,
-                        tokenSymbol: token.symbol,
-                        tokenImageUrl: token.imageUrl
-                    });
-                }
-            }
-        } else if (strategy.targetPrice > token.price) {
-            projectedExits.push({
-                projectedPortfolioValue: getProjectedTotal(strategy.targetPrice),
-                cashOutValue: token.amount * strategy.targetPrice,
-                tokenSymbol: token.symbol,
-                tokenImageUrl: token.imageUrl
-            });
-        }
-    });
-
-    return { projectedExits: projectedExits.sort((a, b) => a.projectedPortfolioValue - b.projectedPortfolioValue) };
 };

@@ -1,12 +1,11 @@
 
 
 import React from 'react';
-import { Token, PortfolioValues, PortfolioHistoryEntry, TopOpportunity, Settings, Conviction, PortfolioProjection } from '../types';
+import { Token, PortfolioValues, PortfolioHistoryEntry, TopOpportunity, Settings, Conviction } from '../types';
 import { formatCurrency, formatTokenPrice, formatCompactNumber } from '../utils/formatters';
 import { PortfolioCompositionChart } from './charts/PortfolioCompositionChart';
 import { WalletIcon, TrendingUpIcon, RocketIcon, PlusIcon, SearchIcon, PencilIcon, Trash2Icon, AlertTriangleIcon, CompareHorizontalIcon, ArrowUpCircleIcon, ArrowDownCircleIcon, CheckCircleIcon } from './ui/Icons';
 import { compareStrategies } from '../utils/portfolioCalculations';
-import { PortfolioProjectionChart } from './charts/PortfolioProjectionChart';
 import { PortfolioHistoryChart } from './charts/PortfolioHistoryChart';
 import { rebalancePortfolio } from '../utils/quickRebalancing';
 
@@ -14,7 +13,6 @@ interface DashboardProps {
     tokens: Token[];
     portfolioValues: PortfolioValues;
     history: PortfolioHistoryEntry[];
-    portfolioProjection: PortfolioProjection;
     sortOrder: Settings['sortTokensBy'];
     isUpdating: boolean;
     isBalanceHidden: boolean;
@@ -392,7 +390,7 @@ const PortfolioOptimizerCard: React.FC<{ tokens: Token[]; onOptimize: () => void
 };
 
 
-export const Dashboard: React.FC<DashboardProps> = ({ tokens, portfolioValues, history, portfolioProjection, sortOrder, isUpdating, isBalanceHidden, onSortChange, onAddToken, onViewToken, onEditToken, onRemoveToken, topOpportunities, onOpenWorkbench, onOpenAdvancedOptimizer }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ tokens, portfolioValues, history, sortOrder, isUpdating, isBalanceHidden, onSortChange, onAddToken, onViewToken, onEditToken, onRemoveToken, topOpportunities, onOpenWorkbench, onOpenAdvancedOptimizer }) => {
     
     const sortedTokens = React.useMemo(() => {
         const sorted = [...tokens];
@@ -503,17 +501,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ tokens, portfolioValues, h
                 <PortfolioHistoryChart history={history} />
             </div>
 
-             <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-lg p-5">
-                <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                    <TrendingUpIcon className="w-5 h-5 text-primary" />
-                    Projected Cash Flow
-                </h2>
-                <PortfolioProjectionChart 
-                    projection={portfolioProjection}
-                    isBalanceHidden={isBalanceHidden}
-                    portfolioTotalValue={portfolioValues.total}
-                />
-            </div>
         </div>
     );
 };

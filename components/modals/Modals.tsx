@@ -5,6 +5,7 @@ import { formatCurrency, formatTokenPrice, parseShorthandNumber, formatShorthand
 import { XIcon, SearchIcon, AlertTriangleIcon, DownloadIcon, UploadIcon, Trash2Icon, PencilIcon, TrophyIcon, CompareHorizontalIcon, ScissorsIcon, TargetIcon, LightbulbIcon, ArrowLeftIcon, ShieldIcon, DollarSignIcon, RocketIcon, TrendingUpIcon, WandSparklesIcon } from '../ui/Icons';
 import { compareStrategies, STRATEGY_CONFIG, generateAiStrategy, getAiRebalancePlan, calculatePortfolioValues } from '../../utils/portfolioCalculations';
 import { useDebounce } from '../../hooks/useDebounce';
+import { CustomExitStrategyModal } from './CustomExitStrategyModal';
 
 const Modal: React.FC<{ isOpen: boolean; onClose: () => void; children: React.ReactNode; size?: 'sm'|'md'|'lg'|'xl'|'full' }> = ({ isOpen, onClose, children, size = 'md' }) => {
     const modalRef = useRef<HTMLDivElement>(null);
@@ -103,6 +104,9 @@ export const AddTokenModal: React.FC<AddTokenModalProps> = ({ isOpen, onClose, o
     const [desiredProfitInput, setDesiredProfitInput] = useState('');
     const [riskTolerance, setRiskTolerance] = useState<'conservative' | 'moderate' | 'aggressive'>('moderate');
     const [generatedStrategy, setGeneratedStrategy] = useState<{ stages: { percentage: number, multiplier: number }[], warning?: string } | null>(null);
+
+    // Custom Strategy State
+    const [showCustomStrategyModal, setShowCustomStrategyModal] = useState(false);
 
 
     useEffect(() => {
@@ -397,6 +401,7 @@ export const AddTokenModal: React.FC<AddTokenModalProps> = ({ isOpen, onClose, o
                                 <option value="ladder">Ladder Exit (2x, 4x, 8x, 16x)</option>
                                 <option value="conservative">Conservative Exit (3x, 6x, 10x)</option>
                                 <option value="moonOrBust">Moon or Bust (5x, 10x, hold 50%)</option>
+                                <option value="custom">Custom Exit Strategy</option>
                                 {token.exitStrategy === 'ai' && <option value="ai">AI Generated Strategy</option>}
                             </select>
                         </div>
@@ -440,12 +445,69 @@ export const AddTokenModal: React.FC<AddTokenModalProps> = ({ isOpen, onClose, o
                                 </div>
                             </details>
                         </div>
+
+                        {/* Custom Strategy Builder */}
+                        <div className="border border-border rounded-lg p-4 bg-muted/50">
+                            <details open={token.exitStrategy === 'custom'}>
+                                <summary className="font-semibold cursor-pointer flex justify-between items-center text-primary">
+                                    <span className="flex items-center gap-2"><TargetIcon className="w-5 h-5"/> Custom Exit Strategy</span>
+                                </summary>
+                                <div className="mt-4 space-y-4 animate-fade-in">
+                                    <p className="text-sm text-muted-foreground">Create your own custom exit strategy with specific sell levels and percentages.</p>
+                                    <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
+                                        <div>
+                                            <p className="font-medium text-sm">Custom Strategy</p>
+                                            <p className="text-xs text-muted-foreground">
+                                                {token.customExitStages && token.customExitStages.length > 0 
+                                                    ? `${token.customExitStages.length} stages configured`
+                                                    : 'No custom stages set'
+                                                }
+                                            </p>
+                                        </div>
+                                        <button 
+                                            type="button" 
+                                            onClick={() => setShowCustomStrategyModal(true)}
+                                            className="px-4 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
+                                        >
+                                            {token.customExitStages && token.customExitStages.length > 0 ? 'Edit Strategy' : 'Create Strategy'}
+                                        </button>
+                                    </div>
+                                    {token.customExitStages && token.customExitStages.length > 0 && (
+                                        <div className="p-3 bg-muted rounded-lg">
+                                            <h4 className="font-semibold text-sm mb-2">Current Strategy:</h4>
+                                            <ul className="text-sm space-y-1">
+                                                {token.customExitStages
+                                                    .sort((a, b) => a.multiplier - b.multiplier)
+                                                    .map((stage, i) => (
+                                                    <li key={i} className="flex justify-between">
+                                                        <span>Stage {i + 1}: ${stage.multiplier}</span>
+                                                        <span className="font-medium">{stage.percentage}%</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+                                </div>
+                            </details>
+                        </div>
                     </div>
                     <div className="flex justify-end gap-3 pt-6">
                         <button type="submit" className="px-6 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90">{existingToken ? 'Update Token' : 'Add Token to Portfolio'}</button>
                     </div>
                 </form>
             )}
+
+            {/* Custom Exit Strategy Modal */}
+            <CustomExitStrategyModal
+                isOpen={showCustomStrategyModal}
+                onClose={() => setShowCustomStrategyModal(false)}
+                onSave={(stages) => {
+                    setToken(prev => ({ ...prev, customExitStages: stages }));
+                    setShowCustomStrategyModal(false);
+                }}
+                existingStages={token.customExitStages}
+                tokenName={token.name || 'Token'}
+            />
         </Modal>
     );
 };
@@ -461,6 +523,7 @@ interface TokenDetailsModalProps {
 }
 export const TokenDetailsModal: React.FC<TokenDetailsModalProps> = ({ isOpen, onClose, token, onSave, onEdit, isBalanceHidden }) => {
     const [activeStrategy, setActiveStrategy] = useState<ExitStrategyType>(token.exitStrategy);
+    const [showCustomStrategyModal, setShowCustomStrategyModal] = useState(false);
 
     useEffect(() => {
         if (isOpen) {
@@ -492,6 +555,8 @@ export const TokenDetailsModal: React.FC<TokenDetailsModalProps> = ({ isOpen, on
     let selectedStrategyConfig: { name: string, description: string };
     if (activeStrategy === 'ai') {
         selectedStrategyConfig = { name: 'AI-Generated Strategy', description: 'A custom strategy based on your profit and risk inputs.' };
+    } else if (activeStrategy === 'custom') {
+        selectedStrategyConfig = { name: 'Custom Exit Strategy', description: 'Your own custom exit strategy with specific sell levels and percentages.' };
     } else if (activeStrategy === 'progressive') {
         selectedStrategyConfig = STRATEGY_CONFIG.progressive;
     } else if (activeStrategy === 'ladder' || activeStrategy === 'conservative' || activeStrategy === 'moonOrBust') {
@@ -558,6 +623,7 @@ export const TokenDetailsModal: React.FC<TokenDetailsModalProps> = ({ isOpen, on
                         <option value="ladder">Ladder Exit</option>
                         <option value="conservative">Conservative Exit</option>
                         <option value="moonOrBust">Moon or Bust</option>
+                        <option value="custom">Custom Exit Strategy</option>
                         {(token.customExitStages && token.customExitStages.length > 0) && <option value="ai">AI Generated Strategy</option>}
                     </select>
                 </div>
@@ -597,6 +663,16 @@ export const TokenDetailsModal: React.FC<TokenDetailsModalProps> = ({ isOpen, on
                                     </div>
                                 )}
                                 </div>
+                                {activeStrategy === 'custom' && (
+                                    <div className="mt-3 pt-3 border-t border-border/50">
+                                        <button
+                                            onClick={() => setShowCustomStrategyModal(true)}
+                                            className="w-full px-3 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                                        >
+                                            Edit Custom Strategy
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </StrategyCard>
@@ -632,6 +708,19 @@ export const TokenDetailsModal: React.FC<TokenDetailsModalProps> = ({ isOpen, on
                     Apply Strategy
                 </button>
             </div>
+
+            {/* Custom Exit Strategy Modal */}
+            <CustomExitStrategyModal
+                isOpen={showCustomStrategyModal}
+                onClose={() => setShowCustomStrategyModal(false)}
+                onSave={(stages) => {
+                    const updatedToken = { ...token, customExitStages: stages };
+                    onSave(updatedToken);
+                    setShowCustomStrategyModal(false);
+                }}
+                existingStages={token.customExitStages}
+                tokenName={token.name}
+            />
         </Modal>
     );
 };

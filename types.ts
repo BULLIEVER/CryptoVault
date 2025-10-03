@@ -1,6 +1,6 @@
 import React from 'react';
 
-export type ExitStrategyType = 'targetMC' | 'ladder' | 'conservative' | 'moonOrBust' | 'ai' | 'progressive' | 'kelly';
+export type ExitStrategyType = 'targetMC' | 'ladder' | 'conservative' | 'moonOrBust' | 'ai' | 'progressive' | 'kelly' | 'custom';
 export type Conviction = 'low' | 'medium' | 'high';
 
 export interface Token {
@@ -99,17 +99,6 @@ export interface StrategyComparison {
     differencePercentage: number;
 }
 
-// FIX: Add missing PortfolioProjection and ProjectedExit types for the projection chart.
-export interface ProjectedExit {
-    projectedPortfolioValue: number;
-    cashOutValue: number;
-    tokenSymbol: string;
-    tokenImageUrl?: string;
-}
-
-export interface PortfolioProjection {
-    projectedExits: ProjectedExit[];
-}
 
 export interface TopOpportunity extends Token {
     potentialMultiplier: number;

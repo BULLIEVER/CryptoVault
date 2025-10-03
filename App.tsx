@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Token, Settings, ModalState, ToastMessage, PortfolioHistoryEntry, TopOpportunity, PortfolioProjection } from './types';
+import { Token, Settings, ModalState, ToastMessage, PortfolioHistoryEntry, TopOpportunity } from './types';
 import { formatCurrency, formatTokenPrice, formatCompactNumber } from './utils/formatters';
 import { searchTokens, batchFetchMarketData } from './services/api';
-import { calculatePortfolioValues, findTopOpportunities, calculatePortfolioProjection } from './utils/portfolioCalculations';
+import { calculatePortfolioValues, findTopOpportunities } from './utils/portfolioCalculations';
 import { exportToCSV, exportToJSON } from './utils/export';
 import { Header } from './components/Header';
 import { Dashboard } from './components/Dashboard';
@@ -72,7 +72,6 @@ const App: React.FC = () => {
     
     const topOpportunities = useMemo(() => findTopOpportunities(tokens), [tokens]);
 
-    const portfolioProjection = useMemo(() => calculatePortfolioProjection(tokens), [tokens]);
 
     const updatePrices = useCallback(async (isManual = false) => {
         if (tokens.length === 0) {
@@ -321,7 +320,6 @@ const App: React.FC = () => {
                        tokens={tokens}
                        portfolioValues={portfolioValues}
                        history={history}
-                       portfolioProjection={portfolioProjection}
                        sortOrder={settings.sortTokensBy}
                        isUpdating={isUpdating}
                        topOpportunities={topOpportunities}
